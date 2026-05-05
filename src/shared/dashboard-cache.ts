@@ -21,7 +21,9 @@ export const createDashboardCache = (storage: StorageBackend): DashboardCache =>
     load: async () => {
       const raw = await storage.get<CacheEntry>(KEY);
       if (!raw || raw.v !== VERSION || !raw.data) return null;
-      return { data: raw.data, fetchedAt: raw.fetchedAt };
+      // writableRepos は後から追加されたため、古いキャッシュには無い
+      const data: DashboardData = { ...raw.data, writableRepos: raw.data.writableRepos ?? [] };
+      return { data, fetchedAt: raw.fetchedAt };
     },
     save: async (data) => {
       const entry: CacheEntry = { v: VERSION, fetchedAt: Date.now(), data };

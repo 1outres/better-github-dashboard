@@ -76,6 +76,11 @@ describe("normalizeDashboard", () => {
     expect(data.pinnedRepos[0]?.nameWithOwner).toBe("octocat/spoon-knife");
   });
 
+  it("starts writableRepos as empty (filled async)", () => {
+    const data = normalizeDashboard(structuredClone(sample) as never);
+    expect(data.writableRepos).toEqual([]);
+  });
+
   it("normalizes issues vs PRs preserving PR-only fields", () => {
     const data = normalizeDashboard(structuredClone(sample) as never);
     const pr = data.reviewRequests[0];
@@ -150,5 +155,86 @@ describe("createGitHubClient", () => {
       );
     const client = createGitHubClient("bad", { fetch: fakeFetch });
     await expect(client.fetchDashboard()).rejects.toThrow(/Bad credentials/);
+  });
+});
+
+describe("fetchWritableRepos", () => {
+  const repoNode = (overrides: { name: string; perm: string }) => ({
+    nameWithOwner: overrides.name,
+    description: null,
+    url: `https://github.com/${overrides.name}`,
+    isPrivate: false,
+    stargazerCount: 0,
+    updatedAt: "2026-05-01T00:00:00Z",
+    viewerPermission: overrides.perm,
+    primaryLanguage: null,
+  });
+
+  it("filters out repos without write+ permission", async () => {
+    const fakeFetch: typeof globalThis.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          data: {
+            viewer: {
+              repositories: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  repoNode({ name: "me/admin-repo", perm: "ADMIN" }),
+                  repoNode({ name: "org/maintain-repo", perm: "MAINTAIN" }),
+                  repoNode({ name: "org/write-repo", perm: "WRITE" }),
+                  repoNode({ name: "org/triage-repo", perm: "TRIAGE" }),
+                  repoNode({ name: "org/read-repo", perm: "READ" }),
+                  null,
+                ],
+              },
+            },
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    const client = createGitHubClient("ghp_test", { fetch: fakeFetch });
+    const repos = await client.fetchWritableRepos();
+    expect(repos.map((r) => r.nameWithOwner)).toEqual([
+      "me/admin-repo",
+      "org/maintain-repo",
+      "org/write-repo",
+    ]);
+  });
+
+  it("paginates until hasNextPage is false", async () => {
+    let calls = 0;
+    const fakeFetch: typeof globalThis.fetch = async (_url, init) => {
+      calls++;
+      const body = JSON.parse((init?.body as string) ?? "{}") as {
+        variables: { cursor: string | null };
+      };
+      const isFirst = calls === 1;
+      expect(body.variables.cursor).toBe(isFirst ? null : "cur-1");
+      return new Response(
+        JSON.stringify({
+          data: {
+            viewer: {
+              repositories: {
+                pageInfo: {
+                  hasNextPage: isFirst,
+                  endCursor: isFirst ? "cur-1" : null,
+                },
+                nodes: [
+                  repoNode({
+                    name: isFirst ? "me/page1" : "me/page2",
+                    perm: "WRITE",
+                  }),
+                ],
+              },
+            },
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    };
+    const client = createGitHubClient("ghp_test", { fetch: fakeFetch });
+    const repos = await client.fetchWritableRepos();
+    expect(calls).toBe(2);
+    expect(repos.map((r) => r.nameWithOwner)).toEqual(["me/page1", "me/page2"]);
   });
 });

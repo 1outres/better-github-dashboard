@@ -1,11 +1,17 @@
 import { graphql } from "@octokit/graphql";
 import type { DashboardData, IssueLike, Repo, Viewer } from "./types";
-import { DASHBOARD_QUERY, DASHBOARD_VARIABLES } from "./queries";
+import { DASHBOARD_QUERY, DASHBOARD_VARIABLES, WRITABLE_REPOS_QUERY } from "./queries";
 
 export type GitHubClient = {
   fetchDashboard: () => Promise<DashboardData>;
   fetchViewer: () => Promise<Viewer>;
+  fetchWritableRepos: () => Promise<Repo[]>;
 };
+
+const MAX_WRITABLE_PAGES = 5;
+
+const isWritablePermission = (perm: string | null | undefined): boolean =>
+  perm === "ADMIN" || perm === "MAINTAIN" || perm === "WRITE";
 
 export type GitHubClientOptions = {
   /** テスト・モック差し替え用 */
@@ -40,6 +46,30 @@ export const createGitHubClient = (pat: string, opts: GitHubClientOptions = {}):
       const raw = await gql<RawDashboardResponse>(DASHBOARD_QUERY, DASHBOARD_VARIABLES);
       return normalizeDashboard(raw);
     },
+
+    fetchWritableRepos: async () => {
+      const out: Repo[] = [];
+      let cursor: string | null = null;
+      for (let page = 0; page < MAX_WRITABLE_PAGES; page++) {
+        const res: RawWritableReposResponse = await gql(WRITABLE_REPOS_QUERY, { cursor });
+        const nodes = compact(res.viewer.repositories.nodes);
+        for (const r of nodes) {
+          if (isWritablePermission(r.viewerPermission)) out.push(r);
+        }
+        if (!res.viewer.repositories.pageInfo.hasNextPage) break;
+        cursor = res.viewer.repositories.pageInfo.endCursor;
+      }
+      return out;
+    },
+  };
+};
+
+type RawWritableReposResponse = {
+  viewer: {
+    repositories: {
+      pageInfo: { hasNextPage: boolean; endCursor: string | null };
+      nodes: (Repo | null)[];
+    };
   };
 };
 
@@ -93,6 +123,7 @@ export const normalizeDashboard = (raw: RawDashboardResponse): DashboardData => 
     viewer: { login: viewer.login, name: viewer.name, avatarUrl: viewer.avatarUrl },
     pinnedRepos: compact(viewer.pinnedItems.nodes),
     recentRepos: compact(viewer.repositories.nodes),
+    writableRepos: [],
     reviewRequests: compact(raw.reviewRequests.nodes).map(toIssue),
     myPullRequests: compact(raw.authoredPRs.nodes).map(toIssue),
     assignedIssues: compact(raw.assigned.nodes).map(toIssue),

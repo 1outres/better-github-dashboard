@@ -7,6 +7,7 @@ const sample: DashboardData = {
   viewer: { login: "u", name: null, avatarUrl: "x" },
   pinnedRepos: [],
   recentRepos: [],
+  writableRepos: [],
   reviewRequests: [],
   myPullRequests: [],
   assignedIssues: [],
@@ -40,5 +41,23 @@ describe("DashboardCache", () => {
     await cache.save(sample);
     await cache.clear();
     expect(await cache.load()).toBeNull();
+  });
+
+  it("backfills writableRepos when an older cache lacks the field", async () => {
+    const legacy = {
+      viewer: { login: "u", name: null, avatarUrl: "x" },
+      pinnedRepos: [],
+      recentRepos: [],
+      reviewRequests: [],
+      myPullRequests: [],
+      assignedIssues: [],
+      mentions: [],
+    };
+    const storage = createMemoryStorage({
+      "dashboard-cache": { v: 1, fetchedAt: 1, data: legacy },
+    });
+    const cache = createDashboardCache(storage);
+    const loaded = await cache.load();
+    expect(loaded?.data.writableRepos).toEqual([]);
   });
 });

@@ -30,7 +30,7 @@ const buildItems = (data: DashboardData | null | undefined): SearchItem[] => {
     out.push(it);
   };
 
-  for (const r of [...data.pinnedRepos, ...data.recentRepos]) {
+  for (const r of [...data.pinnedRepos, ...data.recentRepos, ...data.writableRepos]) {
     push({
       kind: "repo",
       label: r.nameWithOwner,

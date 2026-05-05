@@ -108,3 +108,40 @@ export const DASHBOARD_VARIABLES = {
   assigned: "is:open assignee:@me archived:false",
   mentions: "is:open mentions:@me archived:false",
 } as const;
+
+/**
+ * 検索候補の追加用に、自分が関与する全レポを viewerPermission 付きで取得する。
+ * GraphQL 側に permission フィルタが無いため client 側で WRITE 以上を抽出する。
+ */
+export const WRITABLE_REPOS_QUERY = /* GraphQL */ `
+  query WritableRepos($cursor: String) {
+    viewer {
+      repositories(
+        first: 100
+        after: $cursor
+        ownerAffiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]
+        affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]
+        isFork: false
+        orderBy: { field: PUSHED_AT, direction: DESC }
+      ) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        nodes {
+          nameWithOwner
+          description
+          url
+          isPrivate
+          stargazerCount
+          updatedAt
+          viewerPermission
+          primaryLanguage {
+            name
+            color
+          }
+        }
+      }
+    }
+  }
+`;

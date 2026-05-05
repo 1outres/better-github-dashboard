@@ -53,6 +53,16 @@ export const DashboardApp: Component<{ shadowRoot: ShadowRoot }> = (props) => {
       const fresh = await client.fetchDashboard();
       setData(fresh);
       void cache.save(fresh);
+
+      // 検索候補を充実させるため、書き込み権限のある全レポを非同期で追加読み込み。
+      // 失敗してもダッシュボード本体には影響させない。
+      void client
+        .fetchWritableRepos()
+        .then((writable) => {
+          setData((prev) => (prev ? { ...prev, writableRepos: writable } : prev));
+          void cache.save({ ...fresh, writableRepos: writable });
+        })
+        .catch(() => {});
     } catch (e) {
       setError(e);
     } finally {
