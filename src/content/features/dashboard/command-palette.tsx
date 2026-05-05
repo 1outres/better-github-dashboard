@@ -1,0 +1,208 @@
+import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  onMount,
+  type Component,
+} from "solid-js";
+import type { DashboardData } from "@/shared/github";
+import { IssueIcon, PRIcon, SearchIcon } from "./icons";
+
+type SearchItem = {
+  kind: "repo" | "PullRequest" | "Issue";
+  label: string;
+  sub: string;
+  url: string;
+};
+
+const buildItems = (data: DashboardData | null | undefined): SearchItem[] => {
+  if (!data) return [];
+
+  const seen = new Set<string>();
+  const out: SearchItem[] = [];
+
+  const push = (it: SearchItem) => {
+    if (seen.has(it.url)) return;
+    seen.add(it.url);
+    out.push(it);
+  };
+
+  for (const r of [...data.pinnedRepos, ...data.recentRepos]) {
+    push({
+      kind: "repo",
+      label: r.nameWithOwner,
+      sub: r.description ?? r.primaryLanguage?.name ?? "",
+      url: r.url,
+    });
+  }
+  for (const i of [
+    ...data.reviewRequests,
+    ...data.myPullRequests,
+    ...data.assignedIssues,
+    ...data.mentions,
+  ]) {
+    push({
+      kind: i.type,
+      label: i.title,
+      sub: `${i.repository.nameWithOwner} #${i.number}`,
+      url: i.url,
+    });
+  }
+  return out;
+};
+
+const filterItems = (all: SearchItem[], query: string): SearchItem[] => {
+  const q = query.trim().toLowerCase();
+  if (!q) return all.slice(0, 10);
+  const tokens = q.split(/\s+/).filter(Boolean);
+  return all
+    .filter((it) => {
+      const hay = `${it.label} ${it.sub}`.toLowerCase();
+      return tokens.every((t) => hay.includes(t));
+    })
+    .slice(0, 20);
+};
+
+export const CommandPalette: Component<{
+  data: DashboardData | null | undefined;
+  shadowRoot: ShadowRoot;
+}> = (props) => {
+  const [query, setQuery] = createSignal("");
+  const [open, setOpen] = createSignal(false);
+  const [active, setActive] = createSignal(0);
+  let inputRef!: HTMLInputElement;
+
+  const allItems = createMemo(() => buildItems(props.data));
+  const items = createMemo(() => filterItems(allItems(), query()));
+
+  createEffect(() => {
+    items();
+    setActive(0);
+  });
+
+  const navigate = (url: string) => {
+    if (url) location.href = url;
+  };
+
+  const isTypingTarget = (t: EventTarget | null): boolean => {
+    if (!(t instanceof HTMLElement)) return false;
+    if (t.isContentEditable) return true;
+    const tag = t.tagName;
+    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+  };
+
+  const onKeyDown = (e: KeyboardEvent) => {
+    const isMeta = e.metaKey || e.ctrlKey;
+    if (isMeta && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      inputRef.focus();
+      inputRef.select();
+      setOpen(true);
+      return;
+    }
+    if (!open()) {
+      // 何もフォーカスしていない状態で印字可能文字を打ったら、検索バーへ自動 focus
+      // 既存の input/textarea/contenteditable には介入しない
+      const printable = e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey;
+      if (printable && !isTypingTarget(e.target)) {
+        e.preventDefault();
+        inputRef.focus();
+        setQuery((q) => q + e.key);
+        setOpen(true);
+      }
+      return;
+    }
+
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setOpen(false);
+      inputRef.blur();
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActive((i) => Math.min(items().length - 1, i + 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive((i) => Math.max(0, i - 1));
+    } else if (e.key === "Enter") {
+      const it = items()[active()];
+      if (it) {
+        e.preventDefault();
+        navigate(it.url);
+      }
+    }
+  };
+
+  onMount(() => {
+    document.addEventListener("keydown", onKeyDown);
+    props.shadowRoot.addEventListener("keydown", onKeyDown as EventListener);
+    onCleanup(() => {
+      document.removeEventListener("keydown", onKeyDown);
+      props.shadowRoot.removeEventListener("keydown", onKeyDown as EventListener);
+    });
+  });
+
+  return (
+    <div class="bgd-search" data-open={open()}>
+      <SearchIcon class="bgd-search-icon" />
+      <input
+        ref={inputRef!}
+        type="text"
+        placeholder="Search repositories, issues, PRs…"
+        value={query()}
+        onInput={(e) => {
+          setQuery(e.currentTarget.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        autocomplete="off"
+        spellcheck={false}
+      />
+      <kbd>⌘K</kbd>
+      <Show when={open() && allItems().length > 0}>
+        <div class="bgd-search-dropdown">
+          <Show
+            when={items().length > 0}
+            fallback={<div class="bgd-search-empty">該当なし</div>}
+          >
+            <For each={items()}>
+              {(it, i) => (
+                <a
+                  class={`bgd-search-item${i() === active() ? " active" : ""}`}
+                  href={it.url}
+                  onMouseEnter={() => setActive(i())}
+                  onMouseDown={(e) => {
+                    // blur 前に navigate を確定させる
+                    e.preventDefault();
+                    navigate(it.url);
+                  }}
+                >
+                  <span class={`kind ${it.kind === "repo" ? "repo" : it.kind === "PullRequest" ? "pr" : "issue"}`}>
+                    <Show when={it.kind === "repo"} fallback={
+                      <Show when={it.kind === "PullRequest"} fallback={<IssueIcon size={14} />}>
+                        <PRIcon size={14} />
+                      </Show>
+                    }>
+                      <RepoIcon />
+                    </Show>
+                  </span>
+                  <span class="label">{it.label}</span>
+                  <span class="sub">{it.sub}</span>
+                </a>
+              )}
+            </For>
+          </Show>
+        </div>
+      </Show>
+    </div>
+  );
+};
+
+const RepoIcon: Component = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width={14} height={14} fill="currentColor">
+    <path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25v3.25a.25.25 0 0 1-.4.2l-1.45-1.087a.249.249 0 0 0-.3 0L5.4 15.7a.25.25 0 0 1-.4-.2Z" />
+  </svg>
+);

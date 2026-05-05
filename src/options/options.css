@@ -1,0 +1,174 @@
+:root {
+  color-scheme: light dark;
+  --bgd-bg: #ffffff;
+  --bgd-fg: #1f2328;
+  --bgd-fg-muted: #59636e;
+  --bgd-border: #d1d9e0;
+  --bgd-accent: #0969da;
+  --bgd-success: #1a7f37;
+  --bgd-danger: #d1242f;
+  --bgd-input-bg: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bgd-bg: #0d1117;
+    --bgd-fg: #e6edf3;
+    --bgd-fg-muted: #9198a1;
+    --bgd-border: #30363d;
+    --bgd-accent: #2f81f7;
+    --bgd-success: #3fb950;
+    --bgd-danger: #f85149;
+    --bgd-input-bg: #0d1117;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font:
+    14px/1.5 -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    system-ui,
+    sans-serif;
+  background: var(--bgd-bg);
+  color: var(--bgd-fg);
+}
+
+.bgd-options {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 48px 24px;
+}
+
+.bgd-options h1 {
+  margin: 0 0 8px;
+  font-size: 24px;
+}
+
+.bgd-options .lead {
+  margin: 0 0 32px;
+  color: var(--bgd-fg-muted);
+}
+
+.bgd-section {
+  border: 1px solid var(--bgd-border);
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 16px;
+  background: var(--bgd-bg);
+}
+
+.bgd-section h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.bgd-section .desc {
+  margin: 0 0 16px;
+  color: var(--bgd-fg-muted);
+  font-size: 13px;
+}
+
+.bgd-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+input[type="password"],
+input[type="text"],
+input[type="number"] {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--bgd-border);
+  background: var(--bgd-input-bg);
+  color: var(--bgd-fg);
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+input:focus {
+  outline: 2px solid var(--bgd-accent);
+  outline-offset: -1px;
+  border-color: transparent;
+}
+
+button {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--bgd-border);
+  background: var(--bgd-bg);
+  color: var(--bgd-fg);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+button:hover {
+  border-color: var(--bgd-accent);
+}
+
+button.primary {
+  background: var(--bgd-accent);
+  color: white;
+  border-color: var(--bgd-accent);
+}
+
+button.primary:hover {
+  filter: brightness(1.1);
+}
+
+button.danger {
+  color: var(--bgd-danger);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bgd-status {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.bgd-status.ok {
+  color: var(--bgd-success);
+  background: color-mix(in srgb, var(--bgd-success) 10%, transparent);
+}
+
+.bgd-status.err {
+  color: var(--bgd-danger);
+  background: color-mix(in srgb, var(--bgd-danger) 10%, transparent);
+}
+
+.bgd-help {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--bgd-fg-muted);
+}
+
+.bgd-help a {
+  color: var(--bgd-accent);
+}
+
+.bgd-pat-scopes {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--bgd-fg-muted);
+}
+
+.bgd-pat-scopes code {
+  background: color-mix(in srgb, var(--bgd-fg) 8%, transparent);
+  padding: 1px 4px;
+  border-radius: 3px;
+}

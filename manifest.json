@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Better GitHub Dashboard",
+  "version": "0.0.1",
+  "description": "GitHub のダッシュボードを「目的のリポジトリ/Issue/PRに最短で到達するためのランチャー」に置き換える Chrome 拡張機能",
+  "permissions": ["storage"],
+  "host_permissions": ["https://github.com/*", "https://api.github.com/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://github.com/*"],
+      "js": ["src/content/index.tsx"],
+      "run_at": "document_start"
+    }
+  ],
+  "options_ui": {
+    "page": "src/options/index.html",
+    "open_in_tab": true
+  },
+  "background": {
+    "service_worker": "src/background/index.ts",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Better GitHub Dashboard - 設定を開く"
+  }
+}
