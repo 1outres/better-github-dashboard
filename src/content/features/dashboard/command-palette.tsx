@@ -9,65 +9,19 @@ import {
   type Component,
 } from "solid-js";
 import type { DashboardData } from "@/shared/github";
+import { scoreEntry, type ViewEntry } from "@/shared/view-stats";
+import { buildSearchItems, filterSearchItems } from "@/shared/search-items";
 import { IssueIcon, PRIcon, SearchIcon } from "./icons";
 
-type SearchItem = {
-  kind: "repo" | "PullRequest" | "Issue";
-  label: string;
-  sub: string;
-  url: string;
-};
-
-const buildItems = (data: DashboardData | null | undefined): SearchItem[] => {
-  if (!data) return [];
-
-  const seen = new Set<string>();
-  const out: SearchItem[] = [];
-
-  const push = (it: SearchItem) => {
-    if (seen.has(it.url)) return;
-    seen.add(it.url);
-    out.push(it);
-  };
-
-  for (const r of [...data.pinnedRepos, ...data.recentRepos, ...data.writableRepos]) {
-    push({
-      kind: "repo",
-      label: r.nameWithOwner,
-      sub: r.description ?? r.primaryLanguage?.name ?? "",
-      url: r.url,
-    });
-  }
-  for (const i of [
-    ...data.reviewRequests,
-    ...data.myPullRequests,
-    ...data.assignedIssues,
-    ...data.mentions,
-  ]) {
-    push({
-      kind: i.type,
-      label: i.title,
-      sub: `${i.repository.nameWithOwner} #${i.number}`,
-      url: i.url,
-    });
-  }
-  return out;
-};
-
-const filterItems = (all: SearchItem[], query: string): SearchItem[] => {
-  const q = query.trim().toLowerCase();
-  if (!q) return all.slice(0, 10);
-  const tokens = q.split(/\s+/).filter(Boolean);
-  return all
-    .filter((it) => {
-      const hay = `${it.label} ${it.sub}`.toLowerCase();
-      return tokens.every((t) => hay.includes(t));
-    })
-    .slice(0, 20);
+const sortViewStats = (stats: ViewEntry[]): ViewEntry[] => {
+  if (stats.length === 0) return stats;
+  const now = Date.now();
+  return [...stats].sort((a, b) => scoreEntry(b, now) - scoreEntry(a, now));
 };
 
 export const CommandPalette: Component<{
   data: DashboardData | null | undefined;
+  viewStats: ViewEntry[];
   shadowRoot: ShadowRoot;
 }> = (props) => {
   const [query, setQuery] = createSignal("");
@@ -75,8 +29,8 @@ export const CommandPalette: Component<{
   const [active, setActive] = createSignal(0);
   let inputRef!: HTMLInputElement;
 
-  const allItems = createMemo(() => buildItems(props.data));
-  const items = createMemo(() => filterItems(allItems(), query()));
+  const allItems = createMemo(() => buildSearchItems(props.data, sortViewStats(props.viewStats)));
+  const items = createMemo(() => filterSearchItems(allItems(), query()));
 
   createEffect(() => {
     items();

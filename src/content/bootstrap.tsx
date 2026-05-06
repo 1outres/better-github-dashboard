@@ -2,13 +2,19 @@ import { FeatureManager } from "./runtime/feature-manager";
 import { startRouter } from "./runtime/router";
 import { rootLogger } from "./runtime/logger";
 import { dashboardFeature } from "./features/dashboard";
+import { globalSearchFeature } from "./features/global-search";
 import { hideBootOverlay, showBootOverlay } from "./initial-style";
+import { createViewTracker } from "./view-tracker";
 
 const manager = new FeatureManager(rootLogger);
+manager.register(globalSearchFeature);
 manager.register(dashboardFeature);
+
+const tracker = createViewTracker();
 
 startRouter((url) => {
   void manager.sync(url);
+  tracker.record(url);
 });
 
 window.addEventListener("beforeunload", () => {

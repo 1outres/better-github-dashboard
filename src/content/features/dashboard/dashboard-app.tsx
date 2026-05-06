@@ -14,6 +14,7 @@ import type { DashboardData, IssueLike, Repo } from "@/shared/github";
 import { createSettingsStore } from "@/shared/settings";
 import { createChromeStorage } from "@/shared/storage";
 import { createDashboardCache } from "@/shared/dashboard-cache";
+import { createViewStatsStore, scoreEntry, type ViewEntry } from "@/shared/view-stats";
 import { IssueIcon, LockIcon, PRIcon, RefreshIcon, StarIcon } from "./icons";
 import { formatRelative } from "@/shared/relative-time";
 import { CommandPalette } from "./command-palette";
@@ -21,6 +22,7 @@ import { CommandPalette } from "./command-palette";
 const storage = createChromeStorage();
 const settings = createSettingsStore(storage);
 const cache = createDashboardCache(storage);
+const viewStatsStore = createViewStatsStore(storage);
 
 const openOptions = () => {
   if (!chrome.runtime?.id) return;
@@ -32,11 +34,13 @@ export const DashboardApp: Component<{ shadowRoot: ShadowRoot }> = (props) => {
   const [data, setData] = createSignal<DashboardData | null>(null);
   const [error, setError] = createSignal<unknown>(null);
   const [refreshing, setRefreshing] = createSignal(false);
+  const [viewStats, setViewStats] = createSignal<ViewEntry[]>([]);
 
   // 起動直後: キャッシュから即時 hydrate（fetch を待たずに描画する）
   onMount(async () => {
     const cached = await cache.load();
     if (cached && !data()) setData(cached.data);
+    setViewStats(await viewStatsStore.load());
   });
 
   // 設定の購読（PAT 変更を反映）
@@ -82,13 +86,14 @@ export const DashboardApp: Component<{ shadowRoot: ShadowRoot }> = (props) => {
         onRefresh={refetch}
         canRefresh={!!pat()}
         data={data()}
+        viewStats={viewStats()}
         shadowRoot={props.shadowRoot}
       />
       <Switch>
         <Match when={!pat()}>
           <NoTokenBlank />
         </Match>
-        <Match when={data()}>{(d) => <DashboardContent data={d()} />}</Match>
+        <Match when={data()}>{(d) => <DashboardContent data={d()} viewStats={viewStats()} />}</Match>
         <Match when={error() && !data()}>
           <ErrorBlank error={error()} onRetry={refetch} />
         </Match>
@@ -107,11 +112,12 @@ const Header: Component<{
   onRefresh: () => void;
   canRefresh: boolean;
   data: DashboardData | null | undefined;
+  viewStats: ViewEntry[];
   shadowRoot: ShadowRoot;
 }> = (props) => {
   return (
     <header class="bgd-header">
-      <CommandPalette data={props.data} shadowRoot={props.shadowRoot} />
+      <CommandPalette data={props.data} viewStats={props.viewStats} shadowRoot={props.shadowRoot} />
       <Show when={props.canRefresh}>
         <button
           class={`bgd-iconbtn${props.loading ? " spinning" : ""}`}
@@ -175,8 +181,8 @@ const LoadingSkeleton: Component = () => (
 
 /* ─────────────── Main content ─────────────── */
 
-const DashboardContent: Component<{ data: DashboardData }> = (props) => {
-  const repos = createMemo(() => pickRepos(props.data));
+const DashboardContent: Component<{ data: DashboardData; viewStats: ViewEntry[] }> = (props) => {
+  const repos = createMemo(() => pickRepos(props.data, props.viewStats));
 
   return (
     <>
@@ -205,17 +211,31 @@ const DashboardContent: Component<{ data: DashboardData }> = (props) => {
   );
 };
 
-/** Pinned + Recent をマージし重複排除して8件返す */
-const pickRepos = (data: DashboardData): Repo[] => {
+/**
+ * Pinned + Recent + Writable をマージし重複排除し、直近の閲覧頻度（指数減衰スコア）
+ * の降順で 8 件返す。閲覧履歴の無いリポは score 0 となり、安定ソートで元の順序
+ * （ピン留め → 最近 push → write 権限）が維持される。
+ */
+const pickRepos = (data: DashboardData, viewStats: ViewEntry[]): Repo[] => {
   const seen = new Set<string>();
-  const out: Repo[] = [];
-  for (const r of [...data.pinnedRepos, ...data.recentRepos]) {
+  const all: Repo[] = [];
+  for (const r of [...data.pinnedRepos, ...data.recentRepos, ...data.writableRepos]) {
     if (seen.has(r.nameWithOwner)) continue;
     seen.add(r.nameWithOwner);
-    out.push(r);
-    if (out.length >= 8) break;
+    all.push(r);
   }
-  return out;
+  if (viewStats.length === 0) return all.slice(0, 8);
+  const now = Date.now();
+  const scoreByRepo = new Map<string, number>();
+  for (const e of viewStats) {
+    if (e.kind !== "repo") continue;
+    scoreByRepo.set(e.nameWithOwner, scoreEntry(e, now));
+  }
+  return all
+    .map((r, i) => ({ r, i, s: scoreByRepo.get(r.nameWithOwner) ?? 0 }))
+    .sort((a, b) => b.s - a.s || a.i - b.i)
+    .slice(0, 8)
+    .map((x) => x.r);
 };
 
 const RepoCard: Component<{ repo: Repo }> = (props) => {
