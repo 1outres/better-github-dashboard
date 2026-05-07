@@ -10,8 +10,9 @@ import {
 } from "solid-js";
 import type { DashboardData } from "@/shared/github";
 import { scoreEntry, type ViewEntry } from "@/shared/view-stats";
-import { buildSearchItems, filterSearchItems } from "@/shared/search-items";
+import { buildSearchItems, rankSearchItems } from "@/shared/search-items";
 import { IssueIcon, PRIcon, SearchIcon } from "./icons";
+import { Highlight } from "./highlight";
 
 const sortViewStats = (stats: ViewEntry[]): ViewEntry[] => {
   if (stats.length === 0) return stats;
@@ -30,7 +31,7 @@ export const CommandPalette: Component<{
   let inputRef!: HTMLInputElement;
 
   const allItems = createMemo(() => buildSearchItems(props.data, sortViewStats(props.viewStats)));
-  const items = createMemo(() => filterSearchItems(allItems(), query()));
+  const items = createMemo(() => rankSearchItems(allItems(), query()));
 
   createEffect(() => {
     items();
@@ -81,10 +82,10 @@ export const CommandPalette: Component<{
       e.preventDefault();
       setActive((i) => Math.max(0, i - 1));
     } else if (e.key === "Enter") {
-      const it = items()[active()];
-      if (it) {
+      const r = items()[active()];
+      if (r) {
         e.preventDefault();
-        navigate(it.url);
+        navigate(r.item.url);
       }
     }
   };
@@ -123,28 +124,32 @@ export const CommandPalette: Component<{
             fallback={<div class="bgd-search-empty">該当なし</div>}
           >
             <For each={items()}>
-              {(it, i) => (
+              {(r, i) => (
                 <a
                   class={`bgd-search-item${i() === active() ? " active" : ""}`}
-                  href={it.url}
+                  href={r.item.url}
                   onMouseEnter={() => setActive(i())}
                   onMouseDown={(e) => {
                     // blur 前に navigate を確定させる
                     e.preventDefault();
-                    navigate(it.url);
+                    navigate(r.item.url);
                   }}
                 >
-                  <span class={`kind ${it.kind === "repo" ? "repo" : it.kind === "PullRequest" ? "pr" : "issue"}`}>
-                    <Show when={it.kind === "repo"} fallback={
-                      <Show when={it.kind === "PullRequest"} fallback={<IssueIcon size={14} />}>
+                  <span class={`kind ${r.item.kind === "repo" ? "repo" : r.item.kind === "PullRequest" ? "pr" : "issue"}`}>
+                    <Show when={r.item.kind === "repo"} fallback={
+                      <Show when={r.item.kind === "PullRequest"} fallback={<IssueIcon size={14} />}>
                         <PRIcon size={14} />
                       </Show>
                     }>
                       <RepoIcon />
                     </Show>
                   </span>
-                  <span class="label">{it.label}</span>
-                  <span class="sub">{it.sub}</span>
+                  <span class="label">
+                    <Highlight text={r.item.label} positions={r.matches.label} />
+                  </span>
+                  <span class="sub">
+                    <Highlight text={r.item.sub} positions={r.matches.sub} />
+                  </span>
                 </a>
               )}
             </For>

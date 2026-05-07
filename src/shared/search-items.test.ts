@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DashboardData, IssueLike, Repo } from "./github";
 import type { ViewEntry } from "./view-stats";
-import { buildSearchItems, filterSearchItems } from "./search-items";
+import { buildSearchItems, rankSearchItems, type SearchItem } from "./search-items";
 
 const mkRepo = (overrides: Partial<Repo> = {}): Repo => ({
   nameWithOwner: "o/r",
@@ -139,44 +139,115 @@ describe("buildSearchItems", () => {
   });
 });
 
-describe("filterSearchItems", () => {
-  const items = [
-    { kind: "repo" as const, label: "octocat/hello", sub: "demo repo", url: "u1" },
-    { kind: "PullRequest" as const, label: "Add feature X", sub: "octocat/hello #1", url: "u2" },
-    { kind: "Issue" as const, label: "Fix bug Y", sub: "other/repo #5", url: "u3" },
+describe("rankSearchItems", () => {
+  const items: SearchItem[] = [
+    { kind: "repo", label: "octocat/hello", sub: "demo repo", url: "u1" },
+    { kind: "PullRequest", label: "Add feature X", sub: "octocat/hello #1", url: "u2" },
+    { kind: "Issue", label: "Fix bug Y", sub: "other/repo #5", url: "u3" },
   ];
 
-  it("returns first 10 when query is empty", () => {
-    const many = Array.from({ length: 25 }, (_, i) => ({
-      kind: "repo" as const,
+  it("returns first 10 in input order when query is empty", () => {
+    const many: SearchItem[] = Array.from({ length: 25 }, (_, i) => ({
+      kind: "repo",
       label: `r${i}`,
       sub: "",
       url: `u${i}`,
     }));
-    expect(filterSearchItems(many, "")).toHaveLength(10);
+    const out = rankSearchItems(many, "");
+    expect(out).toHaveLength(10);
+    expect(out.map((r) => r.item.url)).toEqual(many.slice(0, 10).map((m) => m.url));
+    expect(out.every((r) => r.matches.label.length === 0 && r.matches.sub.length === 0)).toBe(true);
   });
 
-  it("matches across label and sub (AND across whitespace tokens)", () => {
-    expect(filterSearchItems(items, "feature")).toHaveLength(1);
-    expect(filterSearchItems(items, "octocat hello")).toHaveLength(2);
-    expect(filterSearchItems(items, "bug other")).toHaveLength(1);
+  it("matches subsequence (fuzzy) across label", () => {
+    const list: SearchItem[] = [
+      { kind: "repo", label: "github-dashboard", sub: "", url: "u1" },
+      { kind: "repo", label: "other-thing", sub: "", url: "u2" },
+    ];
+    const out = rankSearchItems(list, "ghd");
+    expect(out.map((r) => r.item.url)).toEqual(["u1"]);
+    // "github-dashboard" → g(0), h(3), d(7)
+    expect(out[0]?.matches.label).toEqual([0, 3, 7]);
   });
 
-  it("is case-insensitive", () => {
-    expect(filterSearchItems(items, "OCTOCAT")).toHaveLength(2);
+  it("matches AND tokens across label and sub", () => {
+    const out = rankSearchItems(items, "feature");
+    expect(out).toHaveLength(1);
+    expect(out[0]?.item.url).toBe("u2");
+
+    const out2 = rankSearchItems(items, "octocat hello");
+    expect(out2.map((r) => r.item.url).sort()).toEqual(["u1", "u2"]);
+
+    const out3 = rankSearchItems(items, "bug other");
+    expect(out3).toHaveLength(1);
+    expect(out3[0]?.item.url).toBe("u3");
+  });
+
+  it("smart-case: lowercase query is case-insensitive", () => {
+    const out = rankSearchItems(items, "octocat");
+    expect(out).toHaveLength(2);
+  });
+
+  it("smart-case: uppercase query is case-sensitive", () => {
+    const out = rankSearchItems(items, "OCTOCAT");
+    expect(out).toEqual([]);
   });
 
   it("returns empty when no match", () => {
-    expect(filterSearchItems(items, "zzz")).toEqual([]);
+    expect(rankSearchItems(items, "zzz")).toEqual([]);
   });
 
   it("caps results at 20 when filtering", () => {
-    const many = Array.from({ length: 50 }, (_, i) => ({
-      kind: "repo" as const,
+    const many: SearchItem[] = Array.from({ length: 50 }, (_, i) => ({
+      kind: "repo",
       label: `match-${i}`,
       sub: "",
       url: `u${i}`,
     }));
-    expect(filterSearchItems(many, "match")).toHaveLength(20);
+    expect(rankSearchItems(many, "match")).toHaveLength(20);
+  });
+
+  it("ranks contiguous match higher than scattered subsequence", () => {
+    const list: SearchItem[] = [
+      // 'auth' は a-u-t-h を散らばらせて部分列一致するが連続ではない
+      { kind: "repo", label: "a-u-t-h", sub: "", url: "scattered" },
+      // 'auth' が連続部分文字列として現れる
+      { kind: "repo", label: "auth-x", sub: "", url: "contiguous" },
+    ];
+    const out = rankSearchItems(list, "auth");
+    expect(out[0]?.item.url).toBe("contiguous");
+  });
+
+  it("ranks word-boundary match higher", () => {
+    const list: SearchItem[] = [
+      { kind: "repo", label: "preface-thing", sub: "", url: "midword" },
+      { kind: "repo", label: "front-end", sub: "", url: "wordstart" },
+    ];
+    const out = rankSearchItems(list, "fe");
+    expect(out[0]?.item.url).toBe("wordstart");
+  });
+
+  it("breaks score ties by input order (preserving history-based pre-sort)", () => {
+    const list: SearchItem[] = [
+      { kind: "repo", label: "alpha/repo", sub: "", url: "first" },
+      { kind: "repo", label: "alpha/repo", sub: "", url: "second" },
+    ];
+    const out = rankSearchItems(list, "alpha");
+    expect(out.map((r) => r.item.url)).toEqual(["first", "second"]);
+  });
+
+  it("returns match positions for label and sub separately", () => {
+    const list: SearchItem[] = [
+      { kind: "Issue", label: "Fix bug", sub: "owner/repo #5", url: "u1" },
+    ];
+    const out = rankSearchItems(list, "fix repo");
+    expect(out).toHaveLength(1);
+    const r = out[0];
+    expect(r).toBeDefined();
+    expect(r?.matches.label).toEqual([0, 1, 2]);
+    expect(r?.matches.sub.length).toBeGreaterThan(0);
+    // sub positions は sub 文字列内のローカル index になっている
+    const subLen = list[0]!.sub.length;
+    expect(r?.matches.sub.every((p) => p < subLen)).toBe(true);
   });
 });

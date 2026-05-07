@@ -15,10 +15,11 @@ import { createChromeStorage } from "@/shared/storage";
 import { createViewStatsStore, scoreEntry, type ViewEntry } from "@/shared/view-stats";
 import {
   buildSearchItems,
-  filterSearchItems,
+  rankSearchItems,
   type SearchItem,
 } from "@/shared/search-items";
 import { IssueIcon, PRIcon, SearchIcon } from "../dashboard/icons";
+import { Highlight } from "../dashboard/highlight";
 
 const storage = createChromeStorage();
 const cache = createDashboardCache(storage);
@@ -39,7 +40,7 @@ export const GlobalSearchOverlay: Component = () => {
   let inputRef: HTMLInputElement | undefined;
 
   const allItems = createMemo(() => buildSearchItems(data(), sortViewStats(viewStats())));
-  const items = createMemo(() => filterSearchItems(allItems(), query()));
+  const items = createMemo(() => rankSearchItems(allItems(), query()));
 
   // 候補が変わったらハイライト位置をリセット
   createEffect(() => {
@@ -105,10 +106,10 @@ export const GlobalSearchOverlay: Component = () => {
       e.preventDefault();
       setActive((i) => Math.max(0, i - 1));
     } else if (e.key === "Enter") {
-      const it = items()[active()];
-      if (it) {
+      const r = items()[active()];
+      if (r) {
         e.preventDefault();
-        navigate(it.url);
+        navigate(r.item.url);
       }
     }
   };
@@ -162,20 +163,24 @@ export const GlobalSearchOverlay: Component = () => {
               }
             >
               <For each={items()}>
-                {(it, i) => (
+                {(r, i) => (
                   <a
                     class={`bgd-item${i() === active() ? " active" : ""}`}
-                    href={it.url}
+                    href={r.item.url}
                     onMouseEnter={() => setActive(i())}
                     onMouseDown={(e) => {
                       // blur で overlay が閉じる前に navigate を確定させる
                       e.preventDefault();
-                      navigate(it.url);
+                      navigate(r.item.url);
                     }}
                   >
-                    <span class={`kind ${kindClass(it.kind)}`}>{kindIcon(it.kind)}</span>
-                    <span class="label">{it.label}</span>
-                    <span class="sub">{it.sub}</span>
+                    <span class={`kind ${kindClass(r.item.kind)}`}>{kindIcon(r.item.kind)}</span>
+                    <span class="label">
+                      <Highlight text={r.item.label} positions={r.matches.label} />
+                    </span>
+                    <span class="sub">
+                      <Highlight text={r.item.sub} positions={r.matches.sub} />
+                    </span>
                   </a>
                 )}
               </For>

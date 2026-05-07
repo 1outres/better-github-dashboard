@@ -1,3 +1,4 @@
+import { Fzf, extendedMatch, type FzfResultItem } from "fzf";
 import type { DashboardData } from "./github";
 import type { ViewEntry } from "./view-stats";
 
@@ -8,6 +9,12 @@ export type SearchItem = {
   label: string;
   sub: string;
   url: string;
+};
+
+export type RankedItem = {
+  item: SearchItem;
+  score: number;
+  matches: { label: number[]; sub: number[] };
 };
 
 /**
@@ -68,14 +75,64 @@ export const buildSearchItems = (
   return out;
 };
 
-export const filterSearchItems = (all: SearchItem[], query: string): SearchItem[] => {
-  const q = query.trim().toLowerCase();
-  if (!q) return all.slice(0, 10);
-  const tokens = q.split(/\s+/).filter(Boolean);
-  return all
-    .filter((it) => {
-      const hay = `${it.label} ${it.sub}`.toLowerCase();
-      return tokens.every((t) => hay.includes(t));
-    })
-    .slice(0, 20);
+// label と sub を 1 本に連結して fzf に渡す。SEP は extendedMatch のトークン区切り
+// (空白) に当たらないよう、改行ベースの不可視区切りを使う。連結文字列に含まれる位置を
+// 後段で label / sub のローカル index に分解する。
+const SEP = "\n\n";
+
+const haystackOf = (it: SearchItem): string => `${it.label}${SEP}${it.sub}`;
+
+const splitPositions = (
+  positions: Set<number>,
+  labelLen: number,
+): { label: number[]; sub: number[] } => {
+  const label: number[] = [];
+  const sub: number[] = [];
+  const subStart = labelLen + SEP.length;
+  for (const p of positions) {
+    if (p < labelLen) label.push(p);
+    else if (p >= subStart) sub.push(p - subStart);
+  }
+  label.sort((a, b) => a - b);
+  sub.sort((a, b) => a - b);
+  return { label, sub };
+};
+
+export const rankSearchItems = (
+  all: SearchItem[],
+  query: string,
+  opts?: { limit?: number; emptyLimit?: number },
+): RankedItem[] => {
+  const limit = opts?.limit ?? 20;
+  const emptyLimit = opts?.emptyLimit ?? 10;
+  const q = query.trim();
+
+  if (!q) {
+    return all.slice(0, emptyLimit).map((item) => ({
+      item,
+      score: 0,
+      matches: { label: [], sub: [] },
+    }));
+  }
+
+  // タイブレークで入力順（履歴スコア降順で事前ソート済み）を保つため、index を引けるようにしておく。
+  const orderOf = new Map<SearchItem, number>();
+  all.forEach((item, i) => orderOf.set(item, i));
+
+  const fzf = new Fzf<readonly SearchItem[]>(all, {
+    selector: haystackOf,
+    match: extendedMatch,
+    casing: "smart-case",
+    limit,
+    tiebreakers: [
+      (a: FzfResultItem<SearchItem>, b: FzfResultItem<SearchItem>) =>
+        (orderOf.get(a.item) ?? 0) - (orderOf.get(b.item) ?? 0),
+    ],
+  });
+
+  return fzf.find(q).map((r) => ({
+    item: r.item,
+    score: r.score,
+    matches: splitPositions(r.positions, r.item.label.length),
+  }));
 };

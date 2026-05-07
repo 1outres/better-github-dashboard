@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@octokit/graphql": "^8.1.1",
+    "fzf": "^0.5.2",
     "solid-js": "^1.9.3"
   },
   "devDependencies": {

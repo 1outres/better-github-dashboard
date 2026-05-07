@@ -191,3 +191,10 @@ a {
   color: var(--bgd-fg-muted);
   font-size: 13px;
 }
+
+.bgd-mark {
+  background: transparent;
+  color: var(--bgd-accent);
+  font-weight: 600;
+  padding: 0;
+}
