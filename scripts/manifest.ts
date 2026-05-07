@@ -23,6 +23,9 @@ export const patchManifestForFirefox = (
     | { service_worker?: string; type?: string; scripts?: string[] }
     | undefined;
   const next: Record<string, unknown> = { ...manifest };
+  // Chrome MV3 の `author` は `{ email: string }` 形のみ許容のため本体には書けない。
+  // Firefox は文字列 author をリスティングの作者名として表示するので Firefox 用にだけ注入。
+  next.author = "Loutres";
   if (bg?.service_worker) {
     const { service_worker, ...rest } = bg;
     next.background = { ...rest, scripts: [service_worker] };

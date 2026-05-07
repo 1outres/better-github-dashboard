@@ -2,7 +2,8 @@
   "manifest_version": 3,
   "name": "Better GitHub Dashboard",
   "version": "0.0.1",
-  "description": "GitHub のダッシュボードを「目的のリポジトリ/Issue/PRに最短で到達するためのランチャー」に置き換える Chrome 拡張機能",
+  "description": "GitHubのダッシュボードによく使うリポジトリ・担当Issue/PR・検索バーを追加し、GitHub内ならどこでもCmd+Kで検索ランチャーを開ける拡張機能",
+  "homepage_url": "https://github.com/1outres/better-github-dashboard",
   "permissions": ["storage"],
   "host_permissions": ["https://github.com/*", "https://api.github.com/*"],
   "icons": {
