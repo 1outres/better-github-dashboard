@@ -112,6 +112,8 @@ export const DASHBOARD_VARIABLES = {
 /**
  * 検索候補の追加用に、自分が関与する全レポを viewerPermission 付きで取得する。
  * GraphQL 側に permission フィルタが無いため client 側で WRITE 以上を抽出する。
+ * 検索バーは「持っているもの全部」見えてほしいので fork も含める
+ * （ダッシュボード側 recentRepos は意図的に非 fork に絞っている）。
  */
 export const WRITABLE_REPOS_QUERY = /* GraphQL */ `
   query WritableRepos($cursor: String) {
@@ -121,7 +123,6 @@ export const WRITABLE_REPOS_QUERY = /* GraphQL */ `
         after: $cursor
         ownerAffiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]
         affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]
-        isFork: false
         orderBy: { field: PUSHED_AT, direction: DESC }
       ) {
         pageInfo {
