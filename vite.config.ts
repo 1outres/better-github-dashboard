@@ -20,6 +20,12 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       target: "esnext",
+      // content script のチャンク分割で生成される動的 import に対し、Vite が
+      // <link rel="modulepreload" href="/assets/foo.js"> を document.head に挿入する。
+      // これが github.com の context で /assets/foo.js → https://github.com/assets/foo.js に
+      // 解決され GitHub の CSP に弾かれる（実際のロードは chrome-extension:// 経由で成功するため
+      // 機能には影響しないが、コンソールエラーが出続ける）。preload 自体を無効化する。
+      modulePreload: false,
       rollupOptions: {
         input: { options: "src/options/index.html" },
         // ハッシュ無しの固定ファイル名にする。
