@@ -62,22 +62,25 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Package extension zip
+      - name: Package extension zips
         id: package
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          name="better-github-dashboard-${VERSION}.zip"
-          (cd dist && zip -r "../${name}" .)
-          echo "name=$name"             >> "$GITHUB_OUTPUT"
-          echo "path=${PWD}/${name}"    >> "$GITHUB_OUTPUT"
+          chrome_name="better-github-dashboard-chrome-${VERSION}.zip"
+          firefox_name="better-github-dashboard-firefox-${VERSION}.zip"
+          (cd dist/chrome  && zip -r "../../${chrome_name}"  .)
+          (cd dist/firefox && zip -r "../../${firefox_name}" .)
+          echo "chrome=${PWD}/${chrome_name}"   >> "$GITHUB_OUTPUT"
+          echo "firefox=${PWD}/${firefox_name}" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.version.outputs.tag }}
-          ASSET: ${{ steps.package.outputs.path }}
+          CHROME_ASSET: ${{ steps.package.outputs.chrome }}
+          FIREFOX_ASSET: ${{ steps.package.outputs.firefox }}
         run: |
-          gh release create "$TAG" "$ASSET" \
+          gh release create "$TAG" "$CHROME_ASSET" "$FIREFOX_ASSET" \
             --title "$TAG" \
             --generate-notes
