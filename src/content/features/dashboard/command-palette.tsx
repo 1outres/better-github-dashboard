@@ -49,10 +49,19 @@ export const CommandPalette: Component<{
     return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
   };
 
+  /**
+   * GitHub の hotkey ライブラリ (`@github/hotkey`) は document の keydown bubble で
+   * `g i` などのナビゲーションを発火する。我々が消費したキーが GitHub に
+   * 漏れると意図しないページ遷移が起きるので、capture phase で先取りし、
+   * 我々が「消費」する場合のみ stopImmediatePropagation で抑止する。
+   *
+   * preventDefault は呼ばないので、input が focus 中の通常入力は値に反映される。
+   */
   const onKeyDown = (e: KeyboardEvent) => {
     const isMeta = e.metaKey || e.ctrlKey;
     if (isMeta && e.key.toLowerCase() === "k") {
       e.preventDefault();
+      e.stopImmediatePropagation();
       inputRef.focus();
       inputRef.select();
       setOpen(true);
@@ -64,12 +73,18 @@ export const CommandPalette: Component<{
       const printable = e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey;
       if (printable && !isTypingTarget(e.target)) {
         e.preventDefault();
+        e.stopImmediatePropagation();
         inputRef.focus();
         setQuery((q) => q + e.key);
         setOpen(true);
       }
       return;
     }
+
+    // open() === true: 我々の input が focus 中。
+    // GitHub の hotkey が裏で発火するのを避けるため、ここでは常に伝播を止める。
+    // preventDefault は個別キーのみに付け、通常入力は input の default action に任せる。
+    e.stopImmediatePropagation();
 
     if (e.key === "Escape") {
       e.preventDefault();
@@ -91,11 +106,13 @@ export const CommandPalette: Component<{
   };
 
   onMount(() => {
-    document.addEventListener("keydown", onKeyDown);
-    props.shadowRoot.addEventListener("keydown", onKeyDown as EventListener);
+    document.addEventListener("keydown", onKeyDown, { capture: true });
+    props.shadowRoot.addEventListener("keydown", onKeyDown as EventListener, { capture: true });
     onCleanup(() => {
-      document.removeEventListener("keydown", onKeyDown);
-      props.shadowRoot.removeEventListener("keydown", onKeyDown as EventListener);
+      document.removeEventListener("keydown", onKeyDown, { capture: true });
+      props.shadowRoot.removeEventListener("keydown", onKeyDown as EventListener, {
+        capture: true,
+      });
     });
   });
 

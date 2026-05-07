@@ -25,8 +25,21 @@ const cache = createDashboardCache(storage);
 const viewStatsStore = createViewStatsStore(storage);
 
 const openOptions = () => {
-  if (!chrome.runtime?.id) return;
-  void chrome.runtime.sendMessage({ type: "open-options" }).catch(() => {});
+  if (!chrome.runtime?.id) {
+    // 拡張 context が orphan 化した場合のみここに落ちる。
+    // 通常は SW 経由（tabs.query + tabs.create）で開く。
+    const url = chrome.runtime?.getURL?.("src/options/index.html");
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
+    return;
+  }
+  void chrome.runtime.sendMessage({ type: "open-options" }).then(
+    (res: { ok?: boolean; error?: string } | undefined) => {
+      if (!res?.ok) console.warn("[bgd] open-options failed:", res?.error ?? res);
+    },
+    (err: unknown) => {
+      console.warn("[bgd] open-options sendMessage rejected:", err);
+    },
+  );
 };
 
 export const DashboardApp: Component<{ shadowRoot: ShadowRoot }> = (props) => {
