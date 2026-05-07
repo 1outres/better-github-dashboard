@@ -32,6 +32,8 @@ export const patchManifestForFirefox = (
       id: "better-github-dashboard@loutres.me",
       // MV3 の `background.scripts` (event page) を type: "module" で扱える最低バージョン。
       strict_min_version: "121.0",
+      // 拡張は GitHub API への直接通信のみで、第三者サーバーへのデータ送信は行わない。
+      data_collection_permissions: { required: ["none"] },
     },
   };
   return next;

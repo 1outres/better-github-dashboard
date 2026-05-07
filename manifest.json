@@ -5,6 +5,12 @@
   "description": "GitHub のダッシュボードを「目的のリポジトリ/Issue/PRに最短で到達するためのランチャー」に置き換える Chrome 拡張機能",
   "permissions": ["storage"],
   "host_permissions": ["https://github.com/*", "https://api.github.com/*"],
+  "icons": {
+    "16": "src/assets/icons/icon-16.png",
+    "32": "src/assets/icons/icon-32.png",
+    "48": "src/assets/icons/icon-48.png",
+    "128": "src/assets/icons/icon-128.png"
+  },
   "content_scripts": [
     {
       "matches": ["https://github.com/*"],
@@ -21,6 +27,12 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Better GitHub Dashboard - 設定を開く"
+    "default_title": "Better GitHub Dashboard - 設定を開く",
+    "default_icon": {
+      "16": "src/assets/icons/icon-16.png",
+      "32": "src/assets/icons/icon-32.png",
+      "48": "src/assets/icons/icon-48.png",
+      "128": "src/assets/icons/icon-128.png"
+    }
   }
 }

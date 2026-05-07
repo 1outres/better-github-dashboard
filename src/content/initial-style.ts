@@ -106,10 +106,12 @@ export const showBootOverlay = (target?: string | URL): void => {
   }
   const overlay = document.createElement("div");
   overlay.id = OVERLAY_ID;
-  overlay.innerHTML = `
-    <div class="bgd-boot-spinner"></div>
-    <div class="bgd-boot-title">Better GitHub Dashboard</div>
-  `;
+  const spinner = document.createElement("div");
+  spinner.className = "bgd-boot-spinner";
+  const title = document.createElement("div");
+  title.className = "bgd-boot-title";
+  title.textContent = "Better GitHub Dashboard";
+  overlay.append(spinner, title);
   root.appendChild(overlay);
 };
 
