@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Privacy Policy — Better GitHub Dashboard</title>
+    <meta
+      name="description"
+      content="Privacy policy for the Better GitHub Dashboard browser extension."
+    />
+    <link rel="canonical" href="https://1outres.github.io/better-github-dashboard/privacy/" />
+    <style>
+      :root {
+        color-scheme: light dark;
+        --fg: #1f2328;
+        --muted: #59636e;
+        --bg: #ffffff;
+        --accent: #0969da;
+        --border: #d1d9e0;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --fg: #e6edf3;
+          --muted: #9198a1;
+          --bg: #0d1117;
+          --accent: #4493f8;
+          --border: #30363d;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial,
+          "Hiragino Sans", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+        font-size: 16px;
+        line-height: 1.7;
+      }
+      main {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 48px 20px 96px;
+      }
+      h1 {
+        font-size: 1.875rem;
+        line-height: 1.25;
+        margin: 0 0 8px;
+      }
+      h2 {
+        font-size: 1.25rem;
+        line-height: 1.3;
+        margin: 40px 0 12px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid var(--border);
+      }
+      h3 {
+        font-size: 1rem;
+        margin: 24px 0 8px;
+      }
+      p,
+      ul,
+      ol {
+        margin: 0 0 12px;
+      }
+      ul,
+      ol {
+        padding-left: 1.5em;
+      }
+      li {
+        margin: 4px 0;
+      }
+      a {
+        color: var(--accent);
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.9em;
+        padding: 1px 6px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+      }
+      .meta {
+        color: var(--muted);
+        font-size: 0.95rem;
+        margin: 0 0 32px;
+      }
+      .callout {
+        margin: 16px 0;
+        padding: 12px 16px;
+        border-left: 3px solid var(--accent);
+        background: color-mix(in srgb, var(--accent) 8%, transparent);
+        border-radius: 4px;
+      }
+      footer {
+        margin-top: 64px;
+        padding-top: 16px;
+        border-top: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 0.875rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Privacy Policy</h1>
+      <p class="meta">
+        Better GitHub Dashboard browser extension<br />
+        Effective date: 2026-05-07 &middot; Last updated: 2026-05-07
+      </p>
+
+      <h2>1. Overview</h2>
+      <p>
+        This Privacy Policy describes how the
+        <strong>Better GitHub Dashboard</strong> browser extension
+        (&ldquo;the extension&rdquo;) handles your data. The extension is
+        published as an open-source project at
+        <a href="https://github.com/1outres/better-github-dashboard"
+          >github.com/1outres/better-github-dashboard</a
+        >
+        and is distributed via the Chrome Web Store and Firefox Add-ons (AMO).
+      </p>
+
+      <h2>2. Single Purpose</h2>
+      <p>
+        The single purpose of Better GitHub Dashboard is to replace
+        GitHub&rsquo;s home dashboard with a fast launcher for repositories,
+        issues, and pull requests. All functionality of the extension exists
+        solely to support this single purpose.
+      </p>
+
+      <h2>3. Data We Handle</h2>
+      <p>The extension handles the following data, all of which is provided by you or fetched on your behalf:</p>
+      <ul>
+        <li>
+          <strong>GitHub Personal Access Token (PAT)</strong> &mdash; an
+          authentication credential you enter on the extension&rsquo;s options
+          page. The PAT is required to call the GitHub API on your behalf.
+        </li>
+        <li>
+          <strong>Data returned by the GitHub API</strong> &mdash; for example,
+          repository metadata, issues and pull requests assigned to you, and
+          your GitHub username/profile information. This data may include
+          personally identifiable information published on GitHub.
+        </li>
+        <li>
+          <strong>User preferences</strong> &mdash; such as favorite
+          repositories and UI state.
+        </li>
+      </ul>
+
+      <h2>4. Where Data Is Stored</h2>
+      <ul>
+        <li>
+          All data is stored locally on your device using
+          <code>chrome.storage.local</code> (or the browser&rsquo;s equivalent
+          local extension storage). Nothing is written to
+          <code>chrome.storage.sync</code>, so your data is not synchronized
+          across browsers or devices through the extension.
+        </li>
+        <li>
+          The PAT is stored in plain text in local extension storage. The
+          underlying storage is protected by the same operating-system level
+          protections the browser applies to extension data; the extension
+          itself does not add additional encryption. Treat your device&rsquo;s
+          security accordingly.
+        </li>
+        <li>The extension does not use cookies or any tracking technology.</li>
+      </ul>
+
+      <h2>5. Data We Send and to Whom</h2>
+      <ul>
+        <li>
+          The extension sends HTTPS requests
+          <strong>only to <code>https://api.github.com</code></strong>, using
+          your PAT in the <code>Authorization</code> header. These requests are
+          made directly from your browser to GitHub. There is no intermediary
+          server operated by the extension or its author.
+        </li>
+        <li>
+          When no PAT is configured, the extension does not make any GitHub API
+          requests on your behalf.
+        </li>
+        <li>
+          The extension does <strong>not</strong> send data to any third party,
+          analytics service, telemetry endpoint, advertising network, or
+          data broker.
+        </li>
+        <li>The extension does not load or execute remote code.</li>
+        <li>The extension does not collect or transmit your browsing history.</li>
+        <li>
+          The extension does not transmit search queries to any third party.
+          Search and filtering are performed locally in your browser.
+        </li>
+      </ul>
+
+      <h2>6. What We Do NOT Do</h2>
+      <p>We will not use or transfer your data for any of the following:</p>
+      <ul>
+        <li>Selling your data, or transferring it to data brokers.</li>
+        <li>Serving advertising of any kind, including personalized ads.</li>
+        <li>Determining creditworthiness or for lending purposes.</li>
+        <li>
+          Any purpose that is not necessary for the extension&rsquo;s single
+          purpose described in section 2.
+        </li>
+        <li>
+          Allowing humans to read your data, except (a) with your explicit
+          consent, (b) when necessary for security purposes such as
+          investigating abuse, (c) to comply with applicable law, or (d) for
+          aggregated and anonymized internal operations.
+        </li>
+      </ul>
+
+      <h2>7. Limited Use Disclosure</h2>
+      <div class="callout">
+        <p>
+          Better GitHub Dashboard&rsquo;s use of information received from
+          Google APIs and from the GitHub API will adhere to the
+          <a
+            href="https://developer.chrome.com/docs/webstore/program-policies/limited-use"
+            >Chrome Web Store User Data Policy</a
+          >, including the Limited Use requirements.
+        </p>
+      </div>
+      <p>
+        Note: the extension does not currently use any Google APIs. The
+        statement above is included to make our compliance posture explicit
+        for users and reviewers.
+      </p>
+
+      <h2>8. Your Control Over Your Data</h2>
+      <ul>
+        <li>
+          You can clear your PAT and other settings at any time from the
+          extension&rsquo;s options page.
+        </li>
+        <li>
+          Uninstalling the extension removes its local storage from your
+          browser, deleting the PAT and all preferences along with it.
+        </li>
+        <li>
+          To revoke the PAT itself on the GitHub side, visit
+          <a href="https://github.com/settings/tokens"
+            >https://github.com/settings/tokens</a
+          >
+          and delete the token. This is independent of uninstalling the
+          extension.
+        </li>
+      </ul>
+
+      <h2>9. Security</h2>
+      <ul>
+        <li>All API requests are made over HTTPS.</li>
+        <li>
+          Your PAT and your data never leave your device except as part of
+          requests you authorize the extension to make to
+          <code>api.github.com</code>.
+        </li>
+        <li>
+          The extension requests only the minimum browser permissions required
+          for its single purpose: <code>storage</code>, and host access to
+          <code>https://github.com/*</code> and
+          <code>https://api.github.com/*</code>.
+        </li>
+      </ul>
+
+      <h2>10. Children&rsquo;s Privacy</h2>
+      <p>
+        The extension is not directed to children under the age of 13, and we
+        do not knowingly collect personal information from children. Use of
+        GitHub itself is governed by GitHub&rsquo;s own terms and minimum age
+        requirements.
+      </p>
+
+      <h2>11. Changes to This Policy</h2>
+      <p>
+        We may update this policy from time to time. When we do, we will
+        update the &ldquo;Last updated&rdquo; date at the top of this page and
+        publish the change in the project&rsquo;s public Git history at
+        <a href="https://github.com/1outres/better-github-dashboard"
+          >github.com/1outres/better-github-dashboard</a
+        >. Material changes will also be noted in the release notes for the
+        affected version of the extension.
+      </p>
+
+      <h2>12. Contact</h2>
+      <p>
+        Questions, concerns, or data-related requests can be directed to the
+        project&rsquo;s issue tracker:
+      </p>
+      <p>
+        <a href="https://github.com/1outres/better-github-dashboard/issues"
+          >https://github.com/1outres/better-github-dashboard/issues</a
+        >
+      </p>
+
+      <footer>
+        <p>
+          &copy; Better GitHub Dashboard contributors. The source code for the
+          extension and this policy page is available under the project
+          repository.
+        </p>
+      </footer>
+    </main>
+  </body>
+</html>
