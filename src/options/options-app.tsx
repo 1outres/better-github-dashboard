@@ -47,23 +47,17 @@ export const OptionsApp: Component = () => {
   return (
     <main class="bgd-options">
       <h1>Better GitHub Dashboard</h1>
-      <p class="lead">GitHub にアクセスする Personal Access Token を設定します。</p>
 
       <section class="bgd-section">
-        <h2>GitHub Personal Access Token</h2>
-        <p class="desc">
-          ダッシュボードのデータ取得に使います。トークンは{" "}
-          <strong>このブラウザの拡張機能ストレージにのみ保存</strong>{" "}
-          され、外部に送信されません。
-        </p>
-
         <form onSubmit={onSave}>
+          <label class="bgd-label" for="bgd-pat-input">
+            Personal Access Token
+          </label>
           <div class="bgd-row">
             <input
+              id="bgd-pat-input"
               type="password"
-              placeholder={
-                stored()?.pat ? "(設定済み — 変更する場合のみ入力)" : "ghp_xxxxxxxxxxxxxxxxxxxx"
-              }
+              placeholder={stored()?.pat ? "(設定済み)" : "ghp_xxxxxxxxxxxxxxxxxxxx"}
               value={pat()}
               onInput={(e) => setPat(e.currentTarget.value)}
               autocomplete="off"
@@ -97,30 +91,14 @@ export const OptionsApp: Component = () => {
           </Show>
         </form>
 
-        <div class="bgd-help">
-          <p>
-            推奨スコープ（{" "}
-            <a
-              href="https://github.com/settings/tokens/new?description=Better%20GitHub%20Dashboard&scopes=repo,read:user,read:org"
-              target="_blank"
-              rel="noreferrer"
-            >
-              この設定でトークン作成
-            </a>{" "}
-            ）:
-          </p>
-          <ul class="bgd-pat-scopes">
-            <li>
-              <code>repo</code> — Issue/PR の検索とプライベートリポジトリ参照
-            </li>
-            <li>
-              <code>read:user</code> — ログインユーザー情報
-            </li>
-            <li>
-              <code>read:org</code> — 所属組織のリポジトリ
-            </li>
-          </ul>
-        </div>
+        <a
+          class="bgd-create-link"
+          href="https://github.com/settings/tokens/new?description=Better%20GitHub%20Dashboard&scopes=repo,read:user,read:org&default_expires_at=none"
+          target="_blank"
+          rel="noreferrer"
+        >
+          トークンを作成する
+        </a>
       </section>
     </main>
   );
