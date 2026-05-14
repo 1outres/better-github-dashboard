@@ -5,6 +5,7 @@ import { createAppContext } from "./runtime/app-context";
 import { dashboardFeature } from "./features/dashboard";
 import { globalSearchFeature } from "./features/global-search";
 import { createViewTracker } from "./view-tracker";
+import { DASHBOARD_STALE_MS, requestRefreshDashboard } from "@/shared/messages";
 
 const app = createAppContext({ log: rootLogger });
 
@@ -17,6 +18,9 @@ const tracker = createViewTracker(app);
 startRouter((url) => {
   void manager.sync(url);
   tracker.record(url);
+  // GitHub 内ナビゲーションのたびに stale check を投げる。
+  // background は cache が新鮮なら no-op で返す。alarms による定期 polling の代替。
+  void requestRefreshDashboard({ maxAgeMs: DASHBOARD_STALE_MS });
 });
 
 window.addEventListener("beforeunload", () => {

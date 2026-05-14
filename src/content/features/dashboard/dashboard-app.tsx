@@ -15,18 +15,13 @@ import type { AppContext } from "../../runtime/app-context";
 import { IssueIcon, LockIcon, PRIcon, RefreshIcon, StarIcon } from "../shared/icons";
 import { formatRelative } from "@/shared/relative-time";
 import { CommandPalette } from "./command-palette";
-import { requestOpenOptions, requestRefreshDashboard } from "@/shared/messages";
-
-/** キャッシュがこの時間より古ければ起動時に background へ refresh を依頼する */
-const STALE_MS = 5 * 60 * 1000;
+import {
+  DASHBOARD_STALE_MS,
+  requestOpenOptions,
+  requestRefreshDashboard,
+} from "@/shared/messages";
 
 const openOptions = () => {
-  if (!chrome.runtime?.id) {
-    // 拡張 context が orphan 化した場合のフォールバック。通常は SW 経由で開く。
-    const url = chrome.runtime?.getURL?.("src/options/index.html");
-    if (url) window.open(url, "_blank", "noopener,noreferrer");
-    return;
-  }
   void requestOpenOptions().then((res) => {
     if (!res.ok) console.warn("[bgd] open-options failed:", res.error);
   });
@@ -74,11 +69,8 @@ export const DashboardApp: Component<{ shadowRoot: ShadowRoot; app: AppContext }
     const unsubSettings = settings.subscribe((s) => setPat(s.pat));
     void settings.get().then((s) => setPat(s.pat));
 
-    // キャッシュ未取得 / 5 分以上前なら最新化を依頼。
-    // ok レスポンスは storage 経由で勝手に反映されるので待たない。
-    if (!cached || Date.now() - cached.fetchedAt > STALE_MS) {
-      void refresh();
-    }
+    // stale 判定は background で一元化。ok レスポンスは storage 経由で反映されるので待たない。
+    void requestRefreshDashboard({ maxAgeMs: DASHBOARD_STALE_MS });
 
     onCleanup(() => {
       unsubStats();

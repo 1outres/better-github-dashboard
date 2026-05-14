@@ -5,6 +5,7 @@ import type { RefreshResult } from "@/shared/messages";
 
 export type DashboardRefresher = {
   refresh: () => Promise<RefreshResult>;
+  refreshIfStale: (maxAgeMs: number) => Promise<RefreshResult>;
 };
 
 export type RefresherDeps = {
@@ -20,6 +21,9 @@ export type RefresherDeps = {
  * - PAT 未設定なら API を一切叩かない。
  * - 本流の fetchDashboard が成功したらすぐ cache に保存して ok を返し、
  *   writable repos は非同期で追加保存する（失敗しても ok は維持）。
+ *
+ * stale 判定は content / dashboard / overlay などの呼び手ごとに値が異なるため
+ * 引数 maxAgeMs で外から渡す方針。判定そのものはここに集約する。
  */
 export const createDashboardRefresher = (deps: RefresherDeps): DashboardRefresher => {
   const { settings, cache, github } = deps;
@@ -51,14 +55,25 @@ export const createDashboardRefresher = (deps: RefresherDeps): DashboardRefreshe
     }
   };
 
-  return {
-    refresh: () => {
-      if (inFlight) return inFlight;
-      const p = run().finally(() => {
-        inFlight = null;
-      });
-      inFlight = p;
-      return p;
-    },
+  const refresh = (): Promise<RefreshResult> => {
+    if (inFlight) return inFlight;
+    const p = run().finally(() => {
+      inFlight = null;
+    });
+    inFlight = p;
+    return p;
   };
+
+  const refreshIfStale = async (maxAgeMs: number): Promise<RefreshResult> => {
+    const s = await settings.get();
+    if (!s.pat) return { ok: false, reason: "no-pat" };
+
+    const cached = await cache.load();
+    if (cached && Date.now() - cached.fetchedAt <= maxAgeMs) {
+      return { ok: true, fetchedAt: cached.fetchedAt };
+    }
+    return refresh();
+  };
+
+  return { refresh, refreshIfStale };
 };

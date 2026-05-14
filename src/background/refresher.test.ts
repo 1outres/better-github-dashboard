@@ -145,3 +145,72 @@ describe("createDashboardRefresher", () => {
     expect(loaded).not.toBeNull();
   });
 });
+
+describe("createDashboardRefresher.refreshIfStale", () => {
+  it("キャッシュが maxAgeMs 内に収まっていれば fetch をスキップし既存 fetchedAt を返す", async () => {
+    const { settings, cache } = setupStores({ pat: "ghp_test" });
+    await cache.save(mkDashboard());
+    const fetchDashboard = vi.fn().mockResolvedValue(mkDashboard());
+    const refresher = createDashboardRefresher({
+      settings,
+      cache,
+      github: () => mkClient({ fetchDashboard }),
+    });
+
+    const result = await refresher.refreshIfStale(60_000);
+    expect(fetchDashboard).not.toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const loaded = await cache.load();
+      expect(result.fetchedAt).toBe(loaded?.fetchedAt);
+    }
+  });
+
+  it("キャッシュが古ければ fetch を発行する", async () => {
+    const { settings, storage, cache } = setupStores({ pat: "ghp_test" });
+    await storage.set("dashboard-cache", {
+      v: 1,
+      fetchedAt: Date.now() - 60 * 60 * 1000,
+      data: mkDashboard(),
+    });
+    const fetchDashboard = vi.fn().mockResolvedValue(mkDashboard());
+    const refresher = createDashboardRefresher({
+      settings,
+      cache,
+      github: () => mkClient({ fetchDashboard }),
+    });
+
+    const result = await refresher.refreshIfStale(60_000);
+    expect(fetchDashboard).toHaveBeenCalledOnce();
+    expect(result.ok).toBe(true);
+  });
+
+  it("キャッシュが無ければ fetch を発行する", async () => {
+    const { settings, cache } = setupStores({ pat: "ghp_test" });
+    const fetchDashboard = vi.fn().mockResolvedValue(mkDashboard());
+    const refresher = createDashboardRefresher({
+      settings,
+      cache,
+      github: () => mkClient({ fetchDashboard }),
+    });
+
+    const result = await refresher.refreshIfStale(60_000);
+    expect(fetchDashboard).toHaveBeenCalledOnce();
+    expect(result.ok).toBe(true);
+  });
+
+  it("PAT 未設定なら fetch せず no-pat を返す（キャッシュ判定より優先）", async () => {
+    const { settings, cache } = setupStores();
+    await cache.save(mkDashboard()); // fresh cache はあるが PAT が無い
+    const fetchDashboard = vi.fn();
+    const refresher = createDashboardRefresher({
+      settings,
+      cache,
+      github: () => mkClient({ fetchDashboard }),
+    });
+
+    const result = await refresher.refreshIfStale(60_000);
+    expect(fetchDashboard).not.toHaveBeenCalled();
+    expect(result).toEqual({ ok: false, reason: "no-pat" });
+  });
+});

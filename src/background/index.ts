@@ -2,9 +2,11 @@
  * Background service worker.
  *
  * 役割:
- * - 拡張全体で唯一のキャッシュ writer。alarms による定期 fetch、PAT 変更時の即時 fetch、
- *   content からのリクエストによる手動 fetch を集約する。
- * - content から options ページを開けないため、メッセージで仲介する。
+ * - 拡張全体で唯一のキャッシュ writer。PAT 変更時の即時 fetch と、
+ *   content からのリクエスト (refresh / refreshIfStale) を集約する。
+ *   定期 polling は持たず、ユーザーが GitHub をブラウズした際に content から
+ *   stale check メッセージが飛んでくる event-driven な設計。
+ * - content から options ページを直接開けないため、メッセージで仲介する。
  */
 
 import { createChromeStorage } from "@/shared/storage";
@@ -15,8 +17,6 @@ import type { RuntimeRequest, OpenOptionsResponse, RefreshResult } from "@/share
 import { createDashboardRefresher } from "./refresher";
 
 const OPTIONS_PATH = "src/options/index.html";
-const REFRESH_ALARM = "bgd:refresh-dashboard";
-const REFRESH_PERIOD_MIN = 30;
 
 const storage = createChromeStorage();
 const settings = createSettingsStore(storage);
@@ -38,25 +38,9 @@ const focusOrCreateOptionsTab = async (): Promise<void> => {
   await chrome.tabs.create({ url });
 };
 
-const ensureRefreshAlarm = async (): Promise<void> => {
-  const existing = await chrome.alarms.get(REFRESH_ALARM);
-  if (!existing) {
-    await chrome.alarms.create(REFRESH_ALARM, { periodInMinutes: REFRESH_PERIOD_MIN });
-  }
-};
-
 chrome.runtime.onInstalled.addListener(() => {
-  void ensureRefreshAlarm();
   // 初回インストールやアップデート直後は古いキャッシュを最新化する
   void refresher.refresh();
-});
-
-chrome.runtime.onStartup?.addListener?.(() => {
-  void ensureRefreshAlarm();
-});
-
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === REFRESH_ALARM) void refresher.refresh();
 });
 
 /**
@@ -84,7 +68,11 @@ chrome.runtime.onMessage.addListener((message: RuntimeRequest, _sender, sendResp
     return true;
   }
   if (message?.type === "refresh-dashboard") {
-    void refresher.refresh().then((res: RefreshResult) => sendResponse(res));
+    const job: Promise<RefreshResult> =
+      message.maxAgeMs !== undefined
+        ? refresher.refreshIfStale(message.maxAgeMs)
+        : refresher.refresh();
+    void job.then((res) => sendResponse(res));
     return true;
   }
   return false;

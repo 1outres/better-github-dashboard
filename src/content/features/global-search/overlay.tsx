@@ -15,6 +15,7 @@ import type { AppContext } from "../../runtime/app-context";
 import { SearchIcon } from "../shared/icons";
 import { SearchResultRow } from "../shared/search-result";
 import { createArrowNavHandler } from "../shared/keyboard-nav";
+import { DASHBOARD_STALE_MS, requestRefreshDashboard } from "@/shared/messages";
 
 const sortViewStats = (stats: ViewEntry[]): ViewEntry[] => {
   if (stats.length === 0) return stats;
@@ -72,6 +73,8 @@ export const GlobalSearchOverlay: Component<{ app: AppContext }> = (props) => {
       setOpen(willOpen);
       if (willOpen) {
         void refreshAll();
+        // 検索を開いたタイミングで stale なら裏で最新化（dashboard を開かなくても候補が腐らない）
+        void requestRefreshDashboard({ maxAgeMs: DASHBOARD_STALE_MS });
         focusInput();
       }
       return;
