@@ -46,7 +46,7 @@ export const globalSearchFeature: Feature = {
 
     attachToBody(host);
 
-    dispose = render(() => <GlobalSearchOverlay />, root);
+    dispose = render(() => <GlobalSearchOverlay app={ctx.app} />, root);
 
     // GitHub の Turbo はナビゲーション時に <body> の中身を丸ごと差し替えるため、
     // body 直下に append した host も巻き添えで外れる。Solid のレンダ・signal・

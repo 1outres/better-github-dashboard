@@ -67,7 +67,7 @@ export const dashboardFeature: Feature = {
     };
     target.replaceWith(host);
 
-    dispose = render(() => <DashboardApp shadowRoot={shadow} />, root);
+    dispose = render(() => <DashboardApp shadowRoot={shadow} app={ctx.app} />, root);
 
     // bgd-host のレンダリングが落ち着いた次フレームで overlay を消す
     requestAnimationFrame(() => hideBootOverlay());

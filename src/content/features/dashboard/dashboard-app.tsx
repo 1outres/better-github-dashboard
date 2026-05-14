@@ -6,23 +6,16 @@ import {
   createEffect,
   createMemo,
   createSignal,
+  onCleanup,
   onMount,
   type Component,
 } from "solid-js";
-import { createGitHubClient } from "@/shared/github";
 import type { DashboardData, IssueLike, Repo } from "@/shared/github";
-import { createSettingsStore } from "@/shared/settings";
-import { createChromeStorage } from "@/shared/storage";
-import { createDashboardCache } from "@/shared/dashboard-cache";
-import { createViewStatsStore, scoreEntry, type ViewEntry } from "@/shared/view-stats";
+import { scoreEntry, type ViewEntry } from "@/shared/view-stats";
+import type { AppContext } from "../../runtime/app-context";
 import { IssueIcon, LockIcon, PRIcon, RefreshIcon, StarIcon } from "./icons";
 import { formatRelative } from "@/shared/relative-time";
 import { CommandPalette } from "./command-palette";
-
-const storage = createChromeStorage();
-const settings = createSettingsStore(storage);
-const cache = createDashboardCache(storage);
-const viewStatsStore = createViewStatsStore(storage);
 
 const openOptions = () => {
   if (!chrome.runtime?.id) {
@@ -42,7 +35,8 @@ const openOptions = () => {
   );
 };
 
-export const DashboardApp: Component<{ shadowRoot: ShadowRoot }> = (props) => {
+export const DashboardApp: Component<{ shadowRoot: ShadowRoot; app: AppContext }> = (props) => {
+  const { settings, dashboardCache, viewStats: viewStatsStore, github } = props.app;
   const [pat, setPat] = createSignal<string | null>(null);
   const [data, setData] = createSignal<DashboardData | null>(null);
   const [error, setError] = createSignal<unknown>(null);
@@ -51,14 +45,24 @@ export const DashboardApp: Component<{ shadowRoot: ShadowRoot }> = (props) => {
 
   // 起動直後: キャッシュから即時 hydrate（fetch を待たずに描画する）
   onMount(async () => {
-    const cached = await cache.load();
+    const cached = await dashboardCache.load();
     if (cached && !data()) setData(cached.data);
     setViewStats(await viewStatsStore.load());
-  });
 
-  // 設定の購読（PAT 変更を反映）
-  void settings.get().then((s) => setPat(s.pat));
-  settings.subscribe((s) => setPat(s.pat));
+    // overlay / view-tracker など別ソースの書き込みでも view-stats を反映する。
+    // dashboard が常駐している間 viewStats が古いまま放置されないようにする。
+    const unsubStats = props.app.storage.subscribe("view-stats", () => {
+      void viewStatsStore.load().then(setViewStats);
+    });
+    // 同様に PAT 以外のフィールド変更にも追従できるよう、settings 全体を購読する。
+    const unsubSettings = settings.subscribe((s) => setPat(s.pat));
+    void settings.get().then((s) => setPat(s.pat));
+
+    onCleanup(() => {
+      unsubStats();
+      unsubSettings();
+    });
+  });
 
   const refetch = async (): Promise<void> => {
     const token = pat();
@@ -66,10 +70,10 @@ export const DashboardApp: Component<{ shadowRoot: ShadowRoot }> = (props) => {
     setRefreshing(true);
     setError(null);
     try {
-      const client = createGitHubClient(token);
+      const client = github(token);
       const fresh = await client.fetchDashboard();
       setData(fresh);
-      void cache.save(fresh);
+      void dashboardCache.save(fresh);
 
       // 検索候補を充実させるため、書き込み権限のある全レポを非同期で追加読み込み。
       // 失敗してもダッシュボード本体には影響させない。
@@ -77,7 +81,7 @@ export const DashboardApp: Component<{ shadowRoot: ShadowRoot }> = (props) => {
         .fetchWritableRepos()
         .then((writable) => {
           setData((prev) => (prev ? { ...prev, writableRepos: writable } : prev));
-          void cache.save({ ...fresh, writableRepos: writable });
+          void dashboardCache.save({ ...fresh, writableRepos: writable });
         })
         .catch(() => {});
     } catch (e) {

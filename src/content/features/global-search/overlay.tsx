@@ -10,20 +10,15 @@ import {
   type JSX,
 } from "solid-js";
 import type { DashboardData } from "@/shared/github";
-import { createDashboardCache } from "@/shared/dashboard-cache";
-import { createChromeStorage } from "@/shared/storage";
-import { createViewStatsStore, scoreEntry, type ViewEntry } from "@/shared/view-stats";
+import { scoreEntry, type ViewEntry } from "@/shared/view-stats";
 import {
   buildSearchItems,
   rankSearchItems,
   type SearchItem,
 } from "@/shared/search-items";
+import type { AppContext } from "../../runtime/app-context";
 import { IssueIcon, PRIcon, SearchIcon } from "../dashboard/icons";
 import { Highlight } from "../dashboard/highlight";
-
-const storage = createChromeStorage();
-const cache = createDashboardCache(storage);
-const viewStatsStore = createViewStatsStore(storage);
 
 const sortViewStats = (stats: ViewEntry[]): ViewEntry[] => {
   if (stats.length === 0) return stats;
@@ -31,7 +26,8 @@ const sortViewStats = (stats: ViewEntry[]): ViewEntry[] => {
   return [...stats].sort((a, b) => scoreEntry(b, now) - scoreEntry(a, now));
 };
 
-export const GlobalSearchOverlay: Component = () => {
+export const GlobalSearchOverlay: Component<{ app: AppContext }> = (props) => {
+  const { storage, dashboardCache: cache, viewStats: viewStatsStore } = props.app;
   const [open, setOpen] = createSignal(false);
   const [query, setQuery] = createSignal("");
   const [active, setActive] = createSignal(0);

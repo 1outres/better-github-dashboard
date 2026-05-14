@@ -1,5 +1,6 @@
 import type { Feature, FeatureContext } from "./feature";
 import { type Logger, rootLogger } from "./logger";
+import type { AppContext } from "./app-context";
 
 type Mounted = {
   feature: Feature;
@@ -10,8 +11,10 @@ export class FeatureManager {
   private readonly features: Feature[] = [];
   private readonly mounted = new Map<string, Mounted>();
   private readonly log: Logger;
+  private readonly app: AppContext;
 
-  constructor(log: Logger = rootLogger) {
+  constructor(app: AppContext, log: Logger = rootLogger) {
+    this.app = app;
     this.log = log.child("features");
   }
 
@@ -45,6 +48,7 @@ export class FeatureManager {
       url,
       signal: controller.signal,
       log: this.log.child(feature.id),
+      app: this.app,
     };
     this.mounted.set(feature.id, { feature, controller });
     try {

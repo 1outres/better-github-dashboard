@@ -1,9 +1,11 @@
 import type { Logger } from "./logger";
+import type { AppContext } from "./app-context";
 
 export type FeatureContext = {
   readonly url: URL;
   readonly signal: AbortSignal;
   readonly log: Logger;
+  readonly app: AppContext;
 };
 
 export type Feature = {

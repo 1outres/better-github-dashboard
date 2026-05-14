@@ -1,8 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import { FeatureManager } from "./feature-manager";
-import type { Feature } from "./feature";
+import type { Feature, FeatureContext } from "./feature";
+import { createAppContext } from "./app-context";
+import { createMemoryStorage } from "@/shared/storage";
 
-const makeFeature = (id: string, matches: (url: URL) => boolean): Feature & { mount: ReturnType<typeof vi.fn>; unmount: ReturnType<typeof vi.fn> } => {
+const makeApp = () => createAppContext({ storage: createMemoryStorage() });
+
+const makeFeature = (
+  id: string,
+  matches: (url: URL) => boolean,
+): Feature & { mount: ReturnType<typeof vi.fn>; unmount: ReturnType<typeof vi.fn> } => {
   return {
     id,
     match: matches,
@@ -13,7 +20,7 @@ const makeFeature = (id: string, matches: (url: URL) => boolean): Feature & { mo
 
 describe("FeatureManager", () => {
   it("mounts features whose match returns true", async () => {
-    const m = new FeatureManager();
+    const m = new FeatureManager(makeApp());
     const f = makeFeature("a", () => true);
     m.register(f);
     await m.sync(new URL("https://github.com/"));
@@ -21,7 +28,7 @@ describe("FeatureManager", () => {
   });
 
   it("does not mount features whose match returns false", async () => {
-    const m = new FeatureManager();
+    const m = new FeatureManager(makeApp());
     const f = makeFeature("a", () => false);
     m.register(f);
     await m.sync(new URL("https://github.com/foo"));
@@ -29,7 +36,7 @@ describe("FeatureManager", () => {
   });
 
   it("does not double-mount on repeated sync", async () => {
-    const m = new FeatureManager();
+    const m = new FeatureManager(makeApp());
     const f = makeFeature("a", () => true);
     m.register(f);
     await m.sync(new URL("https://github.com/"));
@@ -38,7 +45,7 @@ describe("FeatureManager", () => {
   });
 
   it("unmounts when match flips to false", async () => {
-    const m = new FeatureManager();
+    const m = new FeatureManager(makeApp());
     let on = true;
     const f = makeFeature("a", () => on);
     m.register(f);
@@ -49,7 +56,7 @@ describe("FeatureManager", () => {
   });
 
   it("aborts the feature signal on unmount", async () => {
-    const m = new FeatureManager();
+    const m = new FeatureManager(makeApp());
     let signal: AbortSignal | undefined;
     let on = true;
     const f: Feature = {
@@ -68,13 +75,13 @@ describe("FeatureManager", () => {
   });
 
   it("rejects duplicate ids", () => {
-    const m = new FeatureManager();
+    const m = new FeatureManager(makeApp());
     m.register(makeFeature("a", () => true));
     expect(() => m.register(makeFeature("a", () => true))).toThrow();
   });
 
   it("destroy unmounts all", async () => {
-    const m = new FeatureManager();
+    const m = new FeatureManager(makeApp());
     const f1 = makeFeature("a", () => true);
     const f2 = makeFeature("b", () => true);
     m.register(f1);
@@ -83,5 +90,26 @@ describe("FeatureManager", () => {
     await m.destroy();
     expect(f1.unmount).toHaveBeenCalledOnce();
     expect(f2.unmount).toHaveBeenCalledOnce();
+  });
+
+  it("passes the AppContext to mount via ctx.app", async () => {
+    const app = makeApp();
+    const m = new FeatureManager(app);
+    let received: FeatureContext | undefined;
+    const f: Feature = {
+      id: "a",
+      match: () => true,
+      mount: (ctx) => {
+        received = ctx;
+      },
+    };
+    m.register(f);
+    await m.sync(new URL("https://github.com/"));
+    expect(received?.app).toBe(app);
+    expect(received?.app.storage).toBeDefined();
+    expect(received?.app.settings).toBeDefined();
+    expect(received?.app.viewStats).toBeDefined();
+    expect(received?.app.dashboardCache).toBeDefined();
+    expect(received?.app.github).toBeDefined();
   });
 });
