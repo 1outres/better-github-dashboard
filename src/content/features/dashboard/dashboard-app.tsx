@@ -13,7 +13,7 @@ import {
 import type { DashboardData, IssueLike, Repo } from "@/shared/github";
 import { scoreEntry, type ViewEntry } from "@/shared/view-stats";
 import type { AppContext } from "../../runtime/app-context";
-import { IssueIcon, LockIcon, PRIcon, RefreshIcon, StarIcon } from "./icons";
+import { IssueIcon, LockIcon, PRIcon, RefreshIcon, StarIcon } from "../shared/icons";
 import { formatRelative } from "@/shared/relative-time";
 import { CommandPalette } from "./command-palette";
 

@@ -7,18 +7,14 @@ import {
   onCleanup,
   onMount,
   type Component,
-  type JSX,
 } from "solid-js";
 import type { DashboardData } from "@/shared/github";
 import { scoreEntry, type ViewEntry } from "@/shared/view-stats";
-import {
-  buildSearchItems,
-  rankSearchItems,
-  type SearchItem,
-} from "@/shared/search-items";
+import { buildSearchItems, rankSearchItems } from "@/shared/search-items";
 import type { AppContext } from "../../runtime/app-context";
-import { IssueIcon, PRIcon, SearchIcon } from "../dashboard/icons";
-import { Highlight } from "../dashboard/highlight";
+import { SearchIcon } from "../shared/icons";
+import { SearchResultRow } from "../shared/search-result";
+import { createArrowNavHandler } from "../shared/keyboard-nav";
 
 const sortViewStats = (stats: ViewEntry[]): ViewEntry[] => {
   if (stats.length === 0) return stats;
@@ -54,6 +50,8 @@ export const GlobalSearchOverlay: Component<{ app: AppContext }> = (props) => {
     setOpen(false);
     if (url) location.href = url;
   };
+
+  const handleArrow = createArrowNavHandler(items, active, setActive, (r) => navigate(r.item.url));
 
   const focusInput = () => {
     queueMicrotask(() => {
@@ -95,19 +93,7 @@ export const GlobalSearchOverlay: Component<{ app: AppContext }> = (props) => {
       setOpen(false);
       return;
     }
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setActive((i) => Math.min(items().length - 1, i + 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setActive((i) => Math.max(0, i - 1));
-    } else if (e.key === "Enter") {
-      const r = items()[active()];
-      if (r) {
-        e.preventDefault();
-        navigate(r.item.url);
-      }
-    }
+    handleArrow(e);
   };
 
   onMount(() => {
@@ -160,24 +146,13 @@ export const GlobalSearchOverlay: Component<{ app: AppContext }> = (props) => {
             >
               <For each={items()}>
                 {(r, i) => (
-                  <a
-                    class={`bgd-item${i() === active() ? " active" : ""}`}
-                    href={r.item.url}
+                  <SearchResultRow
+                    result={r}
+                    active={i() === active()}
+                    itemClass="bgd-item"
                     onMouseEnter={() => setActive(i())}
-                    onMouseDown={(e) => {
-                      // blur で overlay が閉じる前に navigate を確定させる
-                      e.preventDefault();
-                      navigate(r.item.url);
-                    }}
-                  >
-                    <span class={`kind ${kindClass(r.item.kind)}`}>{kindIcon(r.item.kind)}</span>
-                    <span class="label">
-                      <Highlight text={r.item.label} positions={r.matches.label} />
-                    </span>
-                    <span class="sub">
-                      <Highlight text={r.item.sub} positions={r.matches.sub} />
-                    </span>
-                  </a>
+                    onSelect={() => navigate(r.item.url)}
+                  />
                 )}
               </For>
             </Show>
@@ -187,24 +162,3 @@ export const GlobalSearchOverlay: Component<{ app: AppContext }> = (props) => {
     </Show>
   );
 };
-
-const kindClass = (k: SearchItem["kind"]): string =>
-  k === "repo" ? "repo" : k === "PullRequest" ? "pr" : "issue";
-
-const kindIcon = (k: SearchItem["kind"]): JSX.Element => {
-  if (k === "PullRequest") return <PRIcon size={14} />;
-  if (k === "Issue") return <IssueIcon size={14} />;
-  return <RepoIcon />;
-};
-
-const RepoIcon: Component = () => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    viewBox="0 0 16 16"
-    width={14}
-    height={14}
-    fill="currentColor"
-  >
-    <path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25v3.25a.25.25 0 0 1-.4.2l-1.45-1.087a.249.249 0 0 0-.3 0L5.4 15.7a.25.25 0 0 1-.4-.2Z" />
-  </svg>
-);
