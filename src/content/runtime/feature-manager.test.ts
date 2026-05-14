@@ -92,6 +92,73 @@ describe("FeatureManager", () => {
     expect(f2.unmount).toHaveBeenCalledOnce();
   });
 
+  it("calls feature.init exactly once at register, with an AbortSignal", async () => {
+    const app = makeApp();
+    const m = new FeatureManager(app);
+    let initSignal: AbortSignal | undefined;
+    const init = vi.fn((ctx: { signal: AbortSignal }) => {
+      initSignal = ctx.signal;
+    });
+    const f: Feature = {
+      id: "a",
+      match: () => false,
+      mount: vi.fn(),
+      init,
+    };
+    m.register(f);
+    // init は microtask で投入されるので一度 yield
+    await Promise.resolve();
+    expect(init).toHaveBeenCalledOnce();
+    expect(initSignal?.aborted).toBe(false);
+
+    // mount/unmount を繰り返しても init は増えない
+    await m.sync(new URL("https://github.com/x"));
+    await m.sync(new URL("https://github.com/"));
+    expect(init).toHaveBeenCalledOnce();
+  });
+
+  it("aborts init signals on destroy", async () => {
+    const m = new FeatureManager(makeApp());
+    let initSignal: AbortSignal | undefined;
+    const f: Feature = {
+      id: "a",
+      match: () => false,
+      mount: vi.fn(),
+      init: (ctx) => {
+        initSignal = ctx.signal;
+      },
+    };
+    m.register(f);
+    await Promise.resolve();
+    expect(initSignal?.aborted).toBe(false);
+    await m.destroy();
+    expect(initSignal?.aborted).toBe(true);
+  });
+
+  it("init failures do not break other features", async () => {
+    const m = new FeatureManager(makeApp());
+    const goodInit = vi.fn();
+    const a: Feature = {
+      id: "a",
+      match: () => false,
+      mount: vi.fn(),
+      init: () => {
+        throw new Error("boom");
+      },
+    };
+    const b: Feature = {
+      id: "b",
+      match: () => false,
+      mount: vi.fn(),
+      init: goodInit,
+    };
+    m.register(a);
+    m.register(b);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(goodInit).toHaveBeenCalledOnce();
+  });
+
   it("passes the AppContext to mount via ctx.app", async () => {
     const app = makeApp();
     const m = new FeatureManager(app);

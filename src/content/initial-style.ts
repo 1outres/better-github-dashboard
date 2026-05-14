@@ -4,6 +4,9 @@
  * これで「起動直後に一瞬本来の GitHub ダッシュボードが見える」FOUC を抑える。
  *
  * dashboard 以外のページでも無害（マッチする要素がないだけ）。
+ *
+ * overlay の show/hide ロジックは dashboard feature が所有する
+ * (`features/dashboard/boot-overlay.ts`)。ここでは CSS の注入だけ行う。
  */
 const STYLE_ID = "bgd-initial-style";
 const OVERLAY_ID = "bgd-boot-overlay";
@@ -58,27 +61,6 @@ const INITIAL_CSS = `
   @keyframes bgd-boot-spin { to { transform: rotate(360deg); } }
 `;
 
-const isDashboardPath = (): boolean => {
-  return location.pathname === "/" || location.pathname === "";
-};
-
-/** 出発元か到着先が dashboard の時のみ true。
- *  起動時は location が出発元、ナビゲーション中も同じ。
- *  GitHub 内の他ページ間（例: リポジトリ→issues）は overlay 不要。 */
-const shouldOverlayForUrl = (url?: string | URL): boolean => {
-  if (isDashboardPath()) return true;
-  if (url) {
-    try {
-      const u = url instanceof URL ? url : new URL(url, location.href);
-      if (u.origin !== location.origin) return false;
-      return u.pathname === "/" || u.pathname === "";
-    } catch {
-      return false;
-    }
-  }
-  return false;
-};
-
 export const injectInitialStyle = (): void => {
   if (document.getElementById(STYLE_ID)) return;
   const root = document.documentElement;
@@ -90,34 +72,4 @@ export const injectInitialStyle = (): void => {
   style.id = STYLE_ID;
   style.textContent = INITIAL_CSS;
   root.appendChild(style);
-};
-
-export const showBootOverlay = (target?: string | URL): void => {
-  if (!shouldOverlayForUrl(target)) return;
-  const existing = document.getElementById(OVERLAY_ID);
-  if (existing) {
-    delete existing.dataset["fading"];
-    return;
-  }
-  const root = document.documentElement;
-  if (!root) {
-    queueMicrotask(() => showBootOverlay(target));
-    return;
-  }
-  const overlay = document.createElement("div");
-  overlay.id = OVERLAY_ID;
-  const spinner = document.createElement("div");
-  spinner.className = "bgd-boot-spinner";
-  const title = document.createElement("div");
-  title.className = "bgd-boot-title";
-  title.textContent = "Better GitHub Dashboard";
-  overlay.append(spinner, title);
-  root.appendChild(overlay);
-};
-
-export const hideBootOverlay = (): void => {
-  const overlay = document.getElementById(OVERLAY_ID);
-  if (!overlay) return;
-  overlay.dataset["fading"] = "true";
-  setTimeout(() => overlay.remove(), 200);
 };

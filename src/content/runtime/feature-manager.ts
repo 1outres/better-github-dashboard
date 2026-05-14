@@ -1,4 +1,4 @@
-import type { Feature, FeatureContext } from "./feature";
+import type { Feature, FeatureContext, FeatureInitContext } from "./feature";
 import { type Logger, rootLogger } from "./logger";
 import type { AppContext } from "./app-context";
 
@@ -10,6 +10,7 @@ type Mounted = {
 export class FeatureManager {
   private readonly features: Feature[] = [];
   private readonly mounted = new Map<string, Mounted>();
+  private readonly inited = new Map<string, AbortController>();
   private readonly log: Logger;
   private readonly app: AppContext;
 
@@ -23,6 +24,19 @@ export class FeatureManager {
       throw new Error(`Feature already registered: ${feature.id}`);
     }
     this.features.push(feature);
+    if (feature.init) {
+      const ac = new AbortController();
+      this.inited.set(feature.id, ac);
+      const ctx: FeatureInitContext = {
+        signal: ac.signal,
+        log: this.log.child(`${feature.id}:init`),
+        app: this.app,
+      };
+      // init は例外を吐いても他 feature を巻き込まないように catch する
+      void Promise.resolve()
+        .then(() => feature.init!(ctx))
+        .catch((err) => this.log.error(`init failed: ${feature.id}`, err));
+    }
   }
 
   async sync(url: URL): Promise<void> {
@@ -38,6 +52,8 @@ export class FeatureManager {
   }
 
   async destroy(): Promise<void> {
+    for (const ac of this.inited.values()) ac.abort();
+    this.inited.clear();
     const ids = [...this.mounted.keys()];
     await Promise.all(ids.map((id) => this.unmountOne(id)));
   }
