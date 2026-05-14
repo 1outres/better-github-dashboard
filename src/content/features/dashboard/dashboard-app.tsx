@@ -3,7 +3,6 @@ import {
   Match,
   Show,
   Switch,
-  createEffect,
   createMemo,
   createSignal,
   onCleanup,
@@ -16,91 +15,83 @@ import type { AppContext } from "../../runtime/app-context";
 import { IssueIcon, LockIcon, PRIcon, RefreshIcon, StarIcon } from "../shared/icons";
 import { formatRelative } from "@/shared/relative-time";
 import { CommandPalette } from "./command-palette";
+import { requestOpenOptions, requestRefreshDashboard } from "@/shared/messages";
+
+/** キャッシュがこの時間より古ければ起動時に background へ refresh を依頼する */
+const STALE_MS = 5 * 60 * 1000;
 
 const openOptions = () => {
   if (!chrome.runtime?.id) {
-    // 拡張 context が orphan 化した場合のみここに落ちる。
-    // 通常は SW 経由（tabs.query + tabs.create）で開く。
+    // 拡張 context が orphan 化した場合のフォールバック。通常は SW 経由で開く。
     const url = chrome.runtime?.getURL?.("src/options/index.html");
     if (url) window.open(url, "_blank", "noopener,noreferrer");
     return;
   }
-  void chrome.runtime.sendMessage({ type: "open-options" }).then(
-    (res: { ok?: boolean; error?: string } | undefined) => {
-      if (!res?.ok) console.warn("[bgd] open-options failed:", res?.error ?? res);
-    },
-    (err: unknown) => {
-      console.warn("[bgd] open-options sendMessage rejected:", err);
-    },
-  );
+  void requestOpenOptions().then((res) => {
+    if (!res.ok) console.warn("[bgd] open-options failed:", res.error);
+  });
 };
 
 export const DashboardApp: Component<{ shadowRoot: ShadowRoot; app: AppContext }> = (props) => {
-  const { settings, dashboardCache, viewStats: viewStatsStore, github } = props.app;
+  const { settings, dashboardCache, viewStats: viewStatsStore, storage } = props.app;
   const [pat, setPat] = createSignal<string | null>(null);
   const [data, setData] = createSignal<DashboardData | null>(null);
-  const [error, setError] = createSignal<unknown>(null);
+  const [error, setError] = createSignal<string | null>(null);
   const [refreshing, setRefreshing] = createSignal(false);
   const [viewStats, setViewStats] = createSignal<ViewEntry[]>([]);
 
-  // 起動直後: キャッシュから即時 hydrate（fetch を待たずに描画する）
-  onMount(async () => {
-    const cached = await dashboardCache.load();
-    if (cached && !data()) setData(cached.data);
-    setViewStats(await viewStatsStore.load());
-
-    // overlay / view-tracker など別ソースの書き込みでも view-stats を反映する。
-    // dashboard が常駐している間 viewStats が古いまま放置されないようにする。
-    const unsubStats = props.app.storage.subscribe("view-stats", () => {
-      void viewStatsStore.load().then(setViewStats);
-    });
-    // 同様に PAT 以外のフィールド変更にも追従できるよう、settings 全体を購読する。
-    const unsubSettings = settings.subscribe((s) => setPat(s.pat));
-    void settings.get().then((s) => setPat(s.pat));
-
-    onCleanup(() => {
-      unsubStats();
-      unsubSettings();
-    });
-  });
-
-  const refetch = async (): Promise<void> => {
-    const token = pat();
-    if (!token) return;
+  /**
+   * background に refresh を委譲する。fetch そのものはここでは行わず、
+   * 結果のキャッシュは storage.onChanged 経由でデータ表示に反映される。
+   */
+  const refresh = async (): Promise<void> => {
     setRefreshing(true);
     setError(null);
-    try {
-      const client = github(token);
-      const fresh = await client.fetchDashboard();
-      setData(fresh);
-      void dashboardCache.save(fresh);
-
-      // 検索候補を充実させるため、書き込み権限のある全レポを非同期で追加読み込み。
-      // 失敗してもダッシュボード本体には影響させない。
-      void client
-        .fetchWritableRepos()
-        .then((writable) => {
-          setData((prev) => (prev ? { ...prev, writableRepos: writable } : prev));
-          void dashboardCache.save({ ...fresh, writableRepos: writable });
-        })
-        .catch(() => {});
-    } catch (e) {
-      setError(e);
-    } finally {
-      setRefreshing(false);
+    const res = await requestRefreshDashboard();
+    setRefreshing(false);
+    if (!res.ok) {
+      if (res.reason === "error") setError(res.message);
+      // reason === "no-pat" は NoTokenBlank で誘導するのでエラー表示しない
     }
   };
 
-  // PAT が確定したら revalidate
-  createEffect(() => {
-    if (pat()) void refetch();
+  onMount(async () => {
+    // キャッシュ + view-stats を hydrate（fetch を待たずに描画する）
+    const cached = await dashboardCache.load();
+    if (cached) setData(cached.data);
+    setViewStats(await viewStatsStore.load());
+
+    // 別ソース (overlay / view-tracker) が view-stats を書き換えたら追従する
+    const unsubStats = storage.subscribe("view-stats", () => {
+      void viewStatsStore.load().then(setViewStats);
+    });
+    // background が dashboard-cache を書き換えたら表示を更新
+    const unsubCache = storage.subscribe("dashboard-cache", () => {
+      void dashboardCache.load().then((c) => {
+        if (c) setData(c.data);
+      });
+    });
+    const unsubSettings = settings.subscribe((s) => setPat(s.pat));
+    void settings.get().then((s) => setPat(s.pat));
+
+    // キャッシュ未取得 / 5 分以上前なら最新化を依頼。
+    // ok レスポンスは storage 経由で勝手に反映されるので待たない。
+    if (!cached || Date.now() - cached.fetchedAt > STALE_MS) {
+      void refresh();
+    }
+
+    onCleanup(() => {
+      unsubStats();
+      unsubCache();
+      unsubSettings();
+    });
   });
 
   return (
     <div class="bgd-shell" data-testid="bgd-shell">
       <Header
         loading={refreshing()}
-        onRefresh={refetch}
+        onRefresh={refresh}
         canRefresh={!!pat()}
         data={data()}
         viewStats={viewStats()}
@@ -112,7 +103,7 @@ export const DashboardApp: Component<{ shadowRoot: ShadowRoot; app: AppContext }
         </Match>
         <Match when={data()}>{(d) => <DashboardContent data={d()} viewStats={viewStats()} />}</Match>
         <Match when={error() && !data()}>
-          <ErrorBlank error={error()} onRetry={refetch} />
+          <ErrorBlank message={error()!} onRetry={refresh} />
         </Match>
         <Match when={!data()}>
           <LoadingSkeleton />
@@ -171,10 +162,10 @@ const NoTokenBlank: Component = () => (
   </div>
 );
 
-const ErrorBlank: Component<{ error: unknown; onRetry: () => void }> = (props) => (
+const ErrorBlank: Component<{ message: string; onRetry: () => void }> = (props) => (
   <div class="bgd-blank">
     <h2>取得に失敗しました</h2>
-    <p>{props.error instanceof Error ? props.error.message : String(props.error)}</p>
+    <p>{props.message}</p>
     <button class="primary" onClick={props.onRetry}>
       再試行
     </button>

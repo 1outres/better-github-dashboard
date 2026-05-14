@@ -4,7 +4,7 @@
   "version": "0.0.1",
   "description": "GitHubのダッシュボードによく使うリポジトリ・担当Issue/PR・検索バーを追加し、GitHub内ならどこでもCmd+Kで検索ランチャーを開ける拡張機能",
   "homepage_url": "https://github.com/1outres/better-github-dashboard",
-  "permissions": ["storage"],
+  "permissions": ["storage", "alarms"],
   "host_permissions": ["https://github.com/*", "https://api.github.com/*"],
   "icons": {
     "16": "src/assets/icons/icon-16.png",

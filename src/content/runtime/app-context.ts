@@ -8,10 +8,10 @@ import type { ViewStatsStore } from "@/shared/view-stats";
 import { createViewStatsStore } from "@/shared/view-stats";
 import type { DashboardCache } from "@/shared/dashboard-cache";
 import { createDashboardCache } from "@/shared/dashboard-cache";
-import type { GitHubClient, GitHubClientOptions } from "@/shared/github";
+import type { GitHubClientFactory } from "@/shared/github";
 import { createGitHubClient } from "@/shared/github";
 
-export type GitHubClientFactory = (pat: string, opts?: GitHubClientOptions) => GitHubClient;
+export type { GitHubClientFactory } from "@/shared/github";
 
 /**
  * 拡張機能のコンテンツスクリプト全体で共有される依存性。
