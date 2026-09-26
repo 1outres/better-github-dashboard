@@ -1,21 +1,9 @@
 import type { AppContext } from "./runtime/app-context";
-import { parseGithubViewUrl, type ViewSeed } from "@/shared/view-stats";
-
-/**
- * GitHub のページタイトルから issue/PR のタイトル部分だけを切り出す。
- * 例: "Title · Issue #42 · owner/repo" → "Title"
- */
-const extractTitle = (rawTitle: string): string | null => {
-  const trimmed = rawTitle.trim();
-  if (!trimmed) return null;
-  const idx = trimmed.indexOf(" · ");
-  return idx > 0 ? trimmed.slice(0, idx) : trimmed;
-};
+import { extractViewTitle, parseGithubViewUrl, type ViewSeed } from "@/shared/view-stats";
 
 const enrichSeed = (seed: ViewSeed): ViewSeed => {
   if (seed.kind === "repo") return seed;
-  const title = extractTitle(document.title);
-  return { ...seed, title };
+  return { ...seed, title: extractViewTitle(document.title, seed) };
 };
 
 /**

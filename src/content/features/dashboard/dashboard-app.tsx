@@ -9,17 +9,28 @@ import {
   onMount,
   type Component,
 } from "solid-js";
-import type { DashboardData, IssueLike, Repo } from "@/shared/github";
-import { scoreEntry, type ViewEntry } from "@/shared/view-stats";
+import type { DashboardData, IssueLike } from "@/shared/github";
+import {
+  collectRepoCandidates,
+  rankRepoCandidates,
+  type CandidateSources,
+  type RepoCandidate,
+} from "@/shared/repo-candidates";
 import type { AppContext } from "../../runtime/app-context";
 import { IssueIcon, LockIcon, PRIcon, RefreshIcon, StarIcon } from "../shared/icons";
+import { createLiveSources } from "../shared/live-sources";
 import { formatRelative } from "@/shared/relative-time";
 import { CommandPalette } from "./command-palette";
+import { RefreshAlert } from "./refresh-alert";
+import { isUnresolved, toRefreshFailure, type RefreshFailure } from "./refresh-failure";
 import {
   DASHBOARD_STALE_MS,
   requestOpenOptions,
   requestRefreshDashboard,
+  type RefreshResult,
 } from "@/shared/messages";
+
+const REPO_CARD_COUNT = 8;
 
 const openOptions = () => {
   void requestOpenOptions().then((res) => {
@@ -28,12 +39,19 @@ const openOptions = () => {
 };
 
 export const DashboardApp: Component<{ shadowRoot: ShadowRoot; app: AppContext }> = (props) => {
-  const { settings, dashboardCache, viewStats: viewStatsStore, storage } = props.app;
+  const { settings } = props.app;
+  const live = createLiveSources(props.app);
   const [pat, setPat] = createSignal<string | null>(null);
-  const [data, setData] = createSignal<DashboardData | null>(null);
-  const [error, setError] = createSignal<string | null>(null);
+  const [failure, setFailure] = createSignal<RefreshFailure | null>(null);
   const [refreshing, setRefreshing] = createSignal(false);
-  const [viewStats, setViewStats] = createSignal<ViewEntry[]>([]);
+
+  const data = () => live.dashboard()?.data ?? null;
+  const unresolvedFailure = () => {
+    const f = failure();
+    return isUnresolved(f, live.dashboard()?.fetchedAt ?? null) ? f : null;
+  };
+
+  const applyRefreshResult = (res: RefreshResult) => setFailure(toRefreshFailure(res, Date.now()));
 
   /**
    * background に refresh を委譲する。fetch そのものはここでは行わず、
@@ -41,42 +59,19 @@ export const DashboardApp: Component<{ shadowRoot: ShadowRoot; app: AppContext }
    */
   const refresh = async (): Promise<void> => {
     setRefreshing(true);
-    setError(null);
     const res = await requestRefreshDashboard();
     setRefreshing(false);
-    if (!res.ok) {
-      if (res.reason === "error") setError(res.message);
-      // reason === "no-pat" は NoTokenBlank で誘導するのでエラー表示しない
-    }
+    applyRefreshResult(res);
   };
 
-  onMount(async () => {
-    // キャッシュ + view-stats を hydrate（fetch を待たずに描画する）
-    const cached = await dashboardCache.load();
-    if (cached) setData(cached.data);
-    setViewStats(await viewStatsStore.load());
-
-    // 別ソース (overlay / view-tracker) が view-stats を書き換えたら追従する
-    const unsubStats = storage.subscribe("view-stats", () => {
-      void viewStatsStore.load().then(setViewStats);
-    });
-    // background が dashboard-cache を書き換えたら表示を更新
-    const unsubCache = storage.subscribe("dashboard-cache", () => {
-      void dashboardCache.load().then((c) => {
-        if (c) setData(c.data);
-      });
-    });
+  onMount(() => {
     const unsubSettings = settings.subscribe((s) => setPat(s.pat));
     void settings.get().then((s) => setPat(s.pat));
 
-    // stale 判定は background で一元化。ok レスポンスは storage 経由で反映されるので待たない。
-    void requestRefreshDashboard({ maxAgeMs: DASHBOARD_STALE_MS });
+    // The background decides whether the cache is stale. New data arrives through storage.
+    void requestRefreshDashboard({ maxAgeMs: DASHBOARD_STALE_MS }).then(applyRefreshResult);
 
-    onCleanup(() => {
-      unsubStats();
-      unsubCache();
-      unsubSettings();
-    });
+    onCleanup(unsubSettings);
   });
 
   return (
@@ -85,17 +80,32 @@ export const DashboardApp: Component<{ shadowRoot: ShadowRoot; app: AppContext }
         loading={refreshing()}
         onRefresh={refresh}
         canRefresh={!!pat()}
-        data={data()}
-        viewStats={viewStats()}
+        fetchedAt={live.dashboard()?.fetchedAt ?? null}
+        sources={live.sources()}
         shadowRoot={props.shadowRoot}
       />
       <Switch>
         <Match when={!pat()}>
           <NoTokenBlank />
         </Match>
-        <Match when={data()}>{(d) => <DashboardContent data={d()} viewStats={viewStats()} />}</Match>
-        <Match when={error() && !data()}>
-          <ErrorBlank message={error()!} onRetry={refresh} />
+        <Match when={live.dashboard()}>
+          {(snapshot) => (
+            <>
+              <Show when={unresolvedFailure()}>
+                {(f) => (
+                  <RefreshAlert
+                    message={f().message}
+                    fetchedAt={snapshot().fetchedAt}
+                    onRetry={refresh}
+                  />
+                )}
+              </Show>
+              <DashboardContent data={snapshot().data} sources={live.sources()} />
+            </>
+          )}
+        </Match>
+        <Match when={!data() && unresolvedFailure()}>
+          {(f) => <ErrorBlank message={f().message} onRetry={refresh} />}
         </Match>
         <Match when={!data()}>
           <LoadingSkeleton />
@@ -111,18 +121,22 @@ const Header: Component<{
   loading: boolean;
   onRefresh: () => void;
   canRefresh: boolean;
-  data: DashboardData | null | undefined;
-  viewStats: ViewEntry[];
+  fetchedAt: number | null;
+  sources: CandidateSources;
   shadowRoot: ShadowRoot;
 }> = (props) => {
+  const refreshTitle = () =>
+    props.fetchedAt === null
+      ? "更新"
+      : `更新（最終更新: ${formatRelative(new Date(props.fetchedAt).toISOString())}）`;
   return (
     <header class="bgd-header">
-      <CommandPalette data={props.data} viewStats={props.viewStats} shadowRoot={props.shadowRoot} />
+      <CommandPalette sources={props.sources} shadowRoot={props.shadowRoot} />
       <Show when={props.canRefresh}>
         <button
           class={`bgd-iconbtn${props.loading ? " spinning" : ""}`}
           onClick={props.onRefresh}
-          title="更新"
+          title={refreshTitle()}
           disabled={props.loading}
         >
           <RefreshIcon />
@@ -181,8 +195,8 @@ const LoadingSkeleton: Component = () => (
 
 /* ─────────────── Main content ─────────────── */
 
-const DashboardContent: Component<{ data: DashboardData; viewStats: ViewEntry[] }> = (props) => {
-  const repos = createMemo(() => pickRepos(props.data, props.viewStats));
+const DashboardContent: Component<{ data: DashboardData; sources: CandidateSources }> = (props) => {
+  const repos = createMemo(() => pickRepos(props.sources));
 
   return (
     <>
@@ -191,7 +205,7 @@ const DashboardContent: Component<{ data: DashboardData; viewStats: ViewEntry[] 
           Repositories <span class="count">({repos().length})</span>
         </div>
         <div class="bgd-repo-grid">
-          <For each={repos()}>{(r) => <RepoCard repo={r} />}</For>
+          <For each={repos()}>{(r) => <RepoCard candidate={r} />}</For>
         </div>
       </section>
 
@@ -211,39 +225,18 @@ const DashboardContent: Component<{ data: DashboardData; viewStats: ViewEntry[] 
   );
 };
 
-/**
- * Pinned + Recent + Writable をマージし重複排除し、直近の閲覧頻度（指数減衰スコア）
- * の降順で 8 件返す。閲覧履歴の無いリポは score 0 となり、安定ソートで元の順序
- * （ピン留め → 最近 push → write 権限）が維持される。
- */
-const pickRepos = (data: DashboardData, viewStats: ViewEntry[]): Repo[] => {
-  const seen = new Set<string>();
-  const all: Repo[] = [];
-  for (const r of [...data.pinnedRepos, ...data.recentRepos, ...data.writableRepos]) {
-    if (seen.has(r.nameWithOwner)) continue;
-    seen.add(r.nameWithOwner);
-    all.push(r);
-  }
-  if (viewStats.length === 0) return all.slice(0, 8);
-  const now = Date.now();
-  const scoreByRepo = new Map<string, number>();
-  for (const e of viewStats) {
-    if (e.kind !== "repo") continue;
-    scoreByRepo.set(e.nameWithOwner, scoreEntry(e, now));
-  }
-  return all
-    .map((r, i) => ({ r, i, s: scoreByRepo.get(r.nameWithOwner) ?? 0 }))
-    .sort((a, b) => b.s - a.s || a.i - b.i)
-    .slice(0, 8)
-    .map((x) => x.r);
-};
+const pickRepos = (sources: CandidateSources): RepoCandidate[] =>
+  rankRepoCandidates(collectRepoCandidates(sources), sources.viewStats, Date.now()).slice(
+    0,
+    REPO_CARD_COUNT,
+  );
 
-const RepoCard: Component<{ repo: Repo }> = (props) => {
-  const parts = () => props.repo.nameWithOwner.split("/");
+const RepoCard: Component<{ candidate: RepoCandidate }> = (props) => {
+  const parts = () => props.candidate.nameWithOwner.split("/");
   const owner = () => parts()[0] ?? "";
-  const name = () => parts()[1] ?? props.repo.nameWithOwner;
+  const name = () => parts()[1] ?? props.candidate.nameWithOwner;
   return (
-    <a class="bgd-repo-card" href={props.repo.url}>
+    <a class="bgd-repo-card" href={props.candidate.url}>
       <div class="head">
         <img
           class="avatar"
@@ -252,36 +245,42 @@ const RepoCard: Component<{ repo: Repo }> = (props) => {
           loading="lazy"
           referrerpolicy="no-referrer"
         />
-        <div class="name" title={props.repo.nameWithOwner}>
+        <div class="name" title={props.candidate.nameWithOwner}>
           <span class="owner">{owner()}</span>
           <span class="repo-name">{name()}</span>
         </div>
-        <Show when={props.repo.isPrivate}>
+        <Show when={props.candidate.details?.isPrivate}>
           <LockIcon class="lock-icon" size={14} />
         </Show>
       </div>
-      <Show when={props.repo.description}>
-        <div class="desc">{props.repo.description}</div>
+      <Show when={props.candidate.details}>
+        {(repo) => (
+          <>
+            <Show when={repo().description}>
+              <div class="desc">{repo().description}</div>
+            </Show>
+            <div class="meta">
+              <Show when={repo().primaryLanguage}>
+                {(lang) => (
+                  <span>
+                    <span
+                      class="lang-dot"
+                      style={{ "--lang-color": lang().color ?? "var(--bgd-fg-muted)" } as never}
+                    />
+                    {lang().name}
+                  </span>
+                )}
+              </Show>
+              <Show when={repo().stargazerCount > 0}>
+                <span>
+                  <StarIcon size={12} /> {repo().stargazerCount}
+                </span>
+              </Show>
+              <span title={repo().updatedAt}>{formatRelative(repo().updatedAt)}</span>
+            </div>
+          </>
+        )}
       </Show>
-      <div class="meta">
-        <Show when={props.repo.primaryLanguage}>
-          {(lang) => (
-            <span>
-              <span
-                class="lang-dot"
-                style={{ "--lang-color": lang().color ?? "var(--bgd-fg-muted)" } as never}
-              />
-              {lang().name}
-            </span>
-          )}
-        </Show>
-        <Show when={props.repo.stargazerCount > 0}>
-          <span>
-            <StarIcon size={12} /> {props.repo.stargazerCount}
-          </span>
-        </Show>
-        <span title={props.repo.updatedAt}>{formatRelative(props.repo.updatedAt)}</span>
-      </div>
     </a>
   );
 };

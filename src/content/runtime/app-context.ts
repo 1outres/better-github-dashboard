@@ -8,6 +8,8 @@ import type { ViewStatsStore } from "@/shared/view-stats";
 import { createViewStatsStore } from "@/shared/view-stats";
 import type { DashboardCache } from "@/shared/dashboard-cache";
 import { createDashboardCache } from "@/shared/dashboard-cache";
+import type { WritableReposCache } from "@/shared/writable-repos-cache";
+import { createWritableReposCache } from "@/shared/writable-repos-cache";
 import type { GitHubClientFactory } from "@/shared/github";
 import { createGitHubClient } from "@/shared/github";
 
@@ -24,6 +26,7 @@ export type AppContext = {
   readonly settings: SettingsStore;
   readonly viewStats: ViewStatsStore;
   readonly dashboardCache: DashboardCache;
+  readonly writableReposCache: WritableReposCache;
   readonly log: Logger;
   readonly github: GitHubClientFactory;
 };
@@ -47,6 +50,7 @@ export const createAppContext = (opts: CreateAppContextOptions = {}): AppContext
     settings: createSettingsStore(storage),
     viewStats: createViewStatsStore(storage),
     dashboardCache: createDashboardCache(storage),
+    writableReposCache: createWritableReposCache(storage),
     log,
     github,
   };

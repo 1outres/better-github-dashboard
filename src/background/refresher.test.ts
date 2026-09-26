@@ -1,20 +1,30 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDashboardRefresher } from "./refresher";
 import { createMemoryStorage } from "@/shared/storage";
 import { createSettingsStore } from "@/shared/settings";
 import { createDashboardCache } from "@/shared/dashboard-cache";
+import { createWritableReposCache } from "@/shared/writable-repos-cache";
 import type { DashboardData, GitHubClient, Repo } from "@/shared/github";
 
 const mkDashboard = (overrides: Partial<DashboardData> = {}): DashboardData => ({
   viewer: { login: "u", name: null, avatarUrl: "" },
   pinnedRepos: [],
   recentRepos: [],
-  writableRepos: [],
   reviewRequests: [],
   myPullRequests: [],
   assignedIssues: [],
   mentions: [],
   ...overrides,
+});
+
+const mkRepo = (nameWithOwner: string): Repo => ({
+  nameWithOwner,
+  description: null,
+  primaryLanguage: null,
+  stargazerCount: 0,
+  updatedAt: "2026-01-01T00:00:00Z",
+  isPrivate: false,
+  url: `https://github.com/${nameWithOwner}`,
 });
 
 const mkClient = (overrides: Partial<GitHubClient> = {}): GitHubClient => ({
@@ -24,193 +34,247 @@ const mkClient = (overrides: Partial<GitHubClient> = {}): GitHubClient => ({
   ...overrides,
 });
 
-const setupStores = (initialSettings?: Record<string, unknown>) => {
-  const storage = createMemoryStorage(initialSettings ? { settings: initialSettings } : {});
-  const settings = createSettingsStore(storage);
-  const cache = createDashboardCache(storage);
-  return { storage, settings, cache };
+const deferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
 };
 
-describe("createDashboardRefresher", () => {
+const setup = (opts: { pat?: string; client?: GitHubClient } = {}) => {
+  const storage = createMemoryStorage(opts.pat ? { settings: { pat: opts.pat } } : {});
+  const settings = createSettingsStore(storage);
+  const dashboardCache = createDashboardCache(storage);
+  const writableReposCache = createWritableReposCache(storage);
+  const client = opts.client ?? mkClient();
+  const github = vi.fn(() => client);
+  const refresher = createDashboardRefresher({
+    settings,
+    dashboardCache,
+    writableReposCache,
+    github,
+  });
+  return { dashboardCache, writableReposCache, client, github, refresher };
+};
+
+const HOUR = 60 * 60 * 1000;
+
+const saveAt = async <T,>(
+  cache: { save: (data: T) => Promise<number> },
+  data: T,
+  at: number,
+): Promise<void> => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(at);
+  await cache.save(data);
+  vi.useRealTimers();
+};
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
+
+describe("createDashboardRefresher.refresh", () => {
   it("PAT 未設定なら GitHub に問い合わせず no-pat を返す", async () => {
-    const { settings, cache } = setupStores();
-    const factory = vi.fn(() => mkClient());
-    const refresher = createDashboardRefresher({ settings, cache, github: factory });
+    const { github, refresher, dashboardCache, writableReposCache } = setup();
 
-    const result = await refresher.refresh();
-    expect(result).toEqual({ ok: false, reason: "no-pat" });
-    expect(factory).not.toHaveBeenCalled();
-    expect(await cache.load()).toBeNull();
+    expect(await refresher.refresh()).toEqual({ ok: false, reason: "no-pat" });
+    expect(github).not.toHaveBeenCalled();
+    expect(await dashboardCache.load()).toBeNull();
+    expect(await writableReposCache.load()).toBeNull();
   });
 
-  it("PAT 設定済みなら fetchDashboard を呼びキャッシュに保存して fetchedAt を返す", async () => {
-    const { settings, cache } = setupStores({ pat: "ghp_test" });
-    const dashboard = mkDashboard({ recentRepos: [{ nameWithOwner: "o/r" } as Repo] });
-    const client = mkClient({ fetchDashboard: vi.fn().mockResolvedValue(dashboard) });
-    const factory = vi.fn(() => client);
-    const refresher = createDashboardRefresher({ settings, cache, github: factory });
-
-    const result = await refresher.refresh();
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.fetchedAt).toBeGreaterThan(0);
-    expect(factory).toHaveBeenCalledWith("ghp_test");
-
-    const loaded = await cache.load();
-    expect(loaded?.data.recentRepos[0]?.nameWithOwner).toBe("o/r");
-  });
-
-  it("GitHub fetch が throw したら ok:false / reason:error を返す", async () => {
-    const { settings, cache } = setupStores({ pat: "ghp_test" });
-    const client = mkClient({
-      fetchDashboard: vi.fn().mockRejectedValue(new Error("Bad credentials")),
+  it("ダッシュボードを取得してキャッシュに保存し、保存した fetchedAt を返す", async () => {
+    const dashboard = mkDashboard({ recentRepos: [mkRepo("o/r")] });
+    const { github, refresher, dashboardCache } = setup({
+      pat: "ghp_test",
+      client: mkClient({ fetchDashboard: vi.fn().mockResolvedValue(dashboard) }),
     });
-    const refresher = createDashboardRefresher({ settings, cache, github: () => client });
 
     const result = await refresher.refresh();
-    expect(result).toEqual({ ok: false, reason: "error", message: "Bad credentials" });
-    expect(await cache.load()).toBeNull();
+
+    expect(github).toHaveBeenCalledWith("ghp_test");
+    const loaded = await dashboardCache.load();
+    expect(loaded?.data).toEqual(dashboard);
+    expect(result).toEqual({ ok: true, fetchedAt: loaded?.fetchedAt });
   });
 
-  it("並行 refresh は in-flight に coalesce される", async () => {
-    const { settings, cache } = setupStores({ pat: "ghp_test" });
-    let resolveFetch: ((d: DashboardData) => void) | undefined;
-    const fetchDashboard = vi.fn(
-      () =>
-        new Promise<DashboardData>((r) => {
-          resolveFetch = r;
-        }),
-    );
-    const refresher = createDashboardRefresher({
-      settings,
-      cache,
-      github: () => mkClient({ fetchDashboard }),
+  it("ダッシュボードの取得が throw したら ok:false / reason:error を返す", async () => {
+    const { refresher, dashboardCache } = setup({
+      pat: "ghp_test",
+      client: mkClient({ fetchDashboard: vi.fn().mockRejectedValue(new Error("Bad credentials")) }),
     });
+
+    expect(await refresher.refresh()).toEqual({
+      ok: false,
+      reason: "error",
+      message: "Bad credentials",
+    });
+    expect(await dashboardCache.load()).toBeNull();
+  });
+
+  it("並行 refresh はダッシュボードの取得を 1 回にまとめる", async () => {
+    const gate = deferred<DashboardData>();
+    const fetchDashboard = vi.fn(() => gate.promise);
+    const { refresher } = setup({ pat: "ghp_test", client: mkClient({ fetchDashboard }) });
 
     const p1 = refresher.refresh();
     const p2 = refresher.refresh();
-    // settings.get() の microtask を解消してから fetchDashboard 到達を確認
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(fetchDashboard).toHaveBeenCalledOnce();
-    resolveFetch!(mkDashboard());
+    await vi.waitFor(() => expect(fetchDashboard).toHaveBeenCalled());
+    gate.resolve(mkDashboard());
     const [r1, r2] = await Promise.all([p1, p2]);
+
+    expect(fetchDashboard).toHaveBeenCalledOnce();
     expect(r1).toEqual(r2);
   });
 
-  it("完了後の新たな refresh は別の fetch を発行する", async () => {
-    const { settings, cache } = setupStores({ pat: "ghp_test" });
+  it("完了後の新たな refresh は別の取得を発行する", async () => {
     const fetchDashboard = vi.fn().mockResolvedValue(mkDashboard());
-    const refresher = createDashboardRefresher({
-      settings,
-      cache,
-      github: () => mkClient({ fetchDashboard }),
-    });
+    const { refresher } = setup({ pat: "ghp_test", client: mkClient({ fetchDashboard }) });
 
     await refresher.refresh();
     await refresher.refresh();
+
     expect(fetchDashboard).toHaveBeenCalledTimes(2);
   });
 
-  it("writable repos は非同期に追加保存される", async () => {
-    const { settings, cache } = setupStores({ pat: "ghp_test" });
-    const writableRepos: Repo[] = [
-      { nameWithOwner: "o/w" } as Repo,
-    ];
-    const client = mkClient({
-      fetchDashboard: vi.fn().mockResolvedValue(mkDashboard()),
-      fetchWritableRepos: vi.fn().mockResolvedValue(writableRepos),
+  it("書き込み権限のあるリポジトリは専用のキャッシュに保存する", async () => {
+    const { refresher, writableReposCache } = setup({
+      pat: "ghp_test",
+      client: mkClient({ fetchWritableRepos: vi.fn().mockResolvedValue([mkRepo("o/w")]) }),
     });
-    const refresher = createDashboardRefresher({ settings, cache, github: () => client });
 
-    const result = await refresher.refresh();
-    expect(result.ok).toBe(true);
-    // 後続の writable repos 保存を待つ
-    await new Promise((r) => setTimeout(r, 0));
-    const loaded = await cache.load();
-    expect(loaded?.data.writableRepos.map((r) => r.nameWithOwner)).toEqual(["o/w"]);
+    await refresher.refresh();
+
+    await vi.waitFor(async () =>
+      expect((await writableReposCache.load())?.data).toEqual([mkRepo("o/w")]),
+    );
   });
 
-  it("writable repos の取得失敗は本流の ok:true を覆さない", async () => {
-    const { settings, cache } = setupStores({ pat: "ghp_test" });
-    const client = mkClient({
-      fetchDashboard: vi.fn().mockResolvedValue(mkDashboard()),
-      fetchWritableRepos: vi.fn().mockRejectedValue(new Error("network")),
+  it("ダッシュボードの保存は、取得中の間も前回のリポジトリ一覧を消さない", async () => {
+    const gate = deferred<Repo[]>();
+    const { refresher, writableReposCache } = setup({
+      pat: "ghp_test",
+      client: mkClient({ fetchWritableRepos: vi.fn(() => gate.promise) }),
     });
-    const refresher = createDashboardRefresher({ settings, cache, github: () => client });
+    await writableReposCache.save([mkRepo("o/old")]);
 
     const result = await refresher.refresh();
+
     expect(result.ok).toBe(true);
-    // 失敗してもキャッシュ本体は保存されている
-    const loaded = await cache.load();
-    expect(loaded).not.toBeNull();
+    expect((await writableReposCache.load())?.data).toEqual([mkRepo("o/old")]);
+    gate.resolve([mkRepo("o/new")]);
+    await vi.waitFor(async () =>
+      expect((await writableReposCache.load())?.data).toEqual([mkRepo("o/new")]),
+    );
+  });
+
+  it("リポジトリ一覧の取得に失敗しても ok:true のままで、前回の一覧を残す", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { refresher, writableReposCache } = setup({
+      pat: "ghp_test",
+      client: mkClient({ fetchWritableRepos: vi.fn().mockRejectedValue(new Error("network")) }),
+    });
+    await writableReposCache.save([mkRepo("o/old")]);
+
+    const result = await refresher.refresh();
+
+    expect(result.ok).toBe(true);
+    await vi.waitFor(() => expect(warn).toHaveBeenCalled());
+    expect((await writableReposCache.load())?.data).toEqual([mkRepo("o/old")]);
+  });
+
+  it("遅れて終わったリポジトリ一覧の取得が、新しいダッシュボードを古い内容で上書きしない", async () => {
+    const gate = deferred<Repo[]>();
+    const fetchDashboard = vi
+      .fn()
+      .mockResolvedValueOnce(mkDashboard())
+      .mockResolvedValueOnce(mkDashboard({ recentRepos: [mkRepo("o/newer")] }));
+    const { refresher, dashboardCache, writableReposCache } = setup({
+      pat: "ghp_test",
+      client: mkClient({ fetchDashboard, fetchWritableRepos: vi.fn(() => gate.promise) }),
+    });
+
+    await refresher.refresh();
+    await refresher.refresh();
+    gate.resolve([mkRepo("o/w")]);
+    await vi.waitFor(async () =>
+      expect((await writableReposCache.load())?.data).toEqual([mkRepo("o/w")]),
+    );
+
+    expect((await dashboardCache.load())?.data.recentRepos).toEqual([mkRepo("o/newer")]);
+  });
+
+  it("リポジトリ一覧の取得中に refresh されても、取得は 1 本にまとめる", async () => {
+    const gate = deferred<Repo[]>();
+    const fetchWritableRepos = vi.fn(() => gate.promise);
+    const { refresher } = setup({ pat: "ghp_test", client: mkClient({ fetchWritableRepos }) });
+
+    await refresher.refresh();
+    await refresher.refresh();
+
+    expect(fetchWritableRepos).toHaveBeenCalledOnce();
+    gate.resolve([]);
   });
 });
 
 describe("createDashboardRefresher.refreshIfStale", () => {
-  it("キャッシュが maxAgeMs 内に収まっていれば fetch をスキップし既存 fetchedAt を返す", async () => {
-    const { settings, cache } = setupStores({ pat: "ghp_test" });
-    await cache.save(mkDashboard());
-    const fetchDashboard = vi.fn().mockResolvedValue(mkDashboard());
-    const refresher = createDashboardRefresher({
-      settings,
-      cache,
-      github: () => mkClient({ fetchDashboard }),
-    });
+  it("どちらのキャッシュも新しければ取得せず、ダッシュボードの fetchedAt を返す", async () => {
+    const { client, refresher, dashboardCache, writableReposCache } = setup({ pat: "ghp_test" });
+    await dashboardCache.save(mkDashboard());
+    await writableReposCache.save([]);
 
     const result = await refresher.refreshIfStale(60_000);
-    expect(fetchDashboard).not.toHaveBeenCalled();
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      const loaded = await cache.load();
-      expect(result.fetchedAt).toBe(loaded?.fetchedAt);
-    }
+
+    expect(client.fetchDashboard).not.toHaveBeenCalled();
+    expect(client.fetchWritableRepos).not.toHaveBeenCalled();
+    expect(result).toEqual({ ok: true, fetchedAt: (await dashboardCache.load())?.fetchedAt });
   });
 
-  it("キャッシュが古ければ fetch を発行する", async () => {
-    const { settings, storage, cache } = setupStores({ pat: "ghp_test" });
-    await storage.set("dashboard-cache", {
-      v: 1,
-      fetchedAt: Date.now() - 60 * 60 * 1000,
-      data: mkDashboard(),
-    });
-    const fetchDashboard = vi.fn().mockResolvedValue(mkDashboard());
-    const refresher = createDashboardRefresher({
-      settings,
-      cache,
-      github: () => mkClient({ fetchDashboard }),
-    });
+  it("ダッシュボードだけ古ければダッシュボードだけ取得する", async () => {
+    const { client, refresher, dashboardCache, writableReposCache } = setup({ pat: "ghp_test" });
+    await saveAt(dashboardCache, mkDashboard(), Date.now() - HOUR);
+    await writableReposCache.save([]);
 
     const result = await refresher.refreshIfStale(60_000);
-    expect(fetchDashboard).toHaveBeenCalledOnce();
+
     expect(result.ok).toBe(true);
+    expect(client.fetchDashboard).toHaveBeenCalledOnce();
+    expect(client.fetchWritableRepos).not.toHaveBeenCalled();
   });
 
-  it("キャッシュが無ければ fetch を発行する", async () => {
-    const { settings, cache } = setupStores({ pat: "ghp_test" });
-    const fetchDashboard = vi.fn().mockResolvedValue(mkDashboard());
-    const refresher = createDashboardRefresher({
-      settings,
-      cache,
-      github: () => mkClient({ fetchDashboard }),
-    });
+  it("リポジトリ一覧だけ古ければリポジトリ一覧だけ取得する", async () => {
+    const { client, refresher, dashboardCache, writableReposCache } = setup({ pat: "ghp_test" });
+    await dashboardCache.save(mkDashboard());
+    await saveAt(writableReposCache, [], Date.now() - HOUR);
 
     const result = await refresher.refreshIfStale(60_000);
-    expect(fetchDashboard).toHaveBeenCalledOnce();
-    expect(result.ok).toBe(true);
+
+    expect(result).toEqual({ ok: true, fetchedAt: (await dashboardCache.load())?.fetchedAt });
+    expect(client.fetchDashboard).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(client.fetchWritableRepos).toHaveBeenCalledOnce());
   });
 
-  it("PAT 未設定なら fetch せず no-pat を返す（キャッシュ判定より優先）", async () => {
-    const { settings, cache } = setupStores();
-    await cache.save(mkDashboard()); // fresh cache はあるが PAT が無い
-    const fetchDashboard = vi.fn();
-    const refresher = createDashboardRefresher({
-      settings,
-      cache,
-      github: () => mkClient({ fetchDashboard }),
-    });
+  it("キャッシュが無ければ両方取得する", async () => {
+    const { client, refresher } = setup({ pat: "ghp_test" });
 
     const result = await refresher.refreshIfStale(60_000);
-    expect(fetchDashboard).not.toHaveBeenCalled();
+
+    expect(result.ok).toBe(true);
+    expect(client.fetchDashboard).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(client.fetchWritableRepos).toHaveBeenCalledOnce());
+  });
+
+  it("PAT 未設定なら取得せず no-pat を返す（キャッシュ判定より優先）", async () => {
+    const { client, refresher, dashboardCache } = setup();
+    await dashboardCache.save(mkDashboard());
+
+    const result = await refresher.refreshIfStale(60_000);
+
     expect(result).toEqual({ ok: false, reason: "no-pat" });
+    expect(client.fetchDashboard).not.toHaveBeenCalled();
+    expect(client.fetchWritableRepos).not.toHaveBeenCalled();
   });
 });

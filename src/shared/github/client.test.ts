@@ -76,11 +76,6 @@ describe("normalizeDashboard", () => {
     expect(data.pinnedRepos[0]?.nameWithOwner).toBe("octocat/spoon-knife");
   });
 
-  it("starts writableRepos as empty (filled async)", () => {
-    const data = normalizeDashboard(structuredClone(sample) as never);
-    expect(data.writableRepos).toEqual([]);
-  });
-
   it("normalizes issues vs PRs preserving PR-only fields", () => {
     const data = normalizeDashboard(structuredClone(sample) as never);
     const pr = data.reviewRequests[0];

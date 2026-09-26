@@ -123,7 +123,6 @@ export const normalizeDashboard = (raw: RawDashboardResponse): DashboardData => 
     viewer: { login: viewer.login, name: viewer.name, avatarUrl: viewer.avatarUrl },
     pinnedRepos: compact(viewer.pinnedItems.nodes),
     recentRepos: compact(viewer.repositories.nodes),
-    writableRepos: [],
     reviewRequests: compact(raw.reviewRequests.nodes).map(toIssue),
     myPullRequests: compact(raw.authoredPRs.nodes).map(toIssue),
     assignedIssues: compact(raw.assigned.nodes).map(toIssue),

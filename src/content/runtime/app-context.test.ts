@@ -4,7 +4,7 @@ import { createMemoryStorage } from "@/shared/storage";
 import { DEFAULT_SETTINGS } from "@/shared/settings";
 
 describe("createAppContext", () => {
-  it("wires settings/viewStats/dashboardCache against the provided storage", async () => {
+  it("wires settings/viewStats/caches against the provided storage", async () => {
     const storage = createMemoryStorage();
     const app = createAppContext({ storage });
 
@@ -17,6 +17,7 @@ describe("createAppContext", () => {
 
     expect(await app.viewStats.load()).toEqual([]);
     expect(await app.dashboardCache.load()).toBeNull();
+    expect(await app.writableReposCache.load()).toBeNull();
   });
 
   it("uses the injected github factory", () => {

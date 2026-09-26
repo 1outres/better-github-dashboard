@@ -38,8 +38,6 @@ export type DashboardData = {
   viewer: Viewer;
   pinnedRepos: Repo[];
   recentRepos: Repo[];
-  /** 自分が write 以上の権限を持つ全レポ。検索候補用に非同期で埋められる */
-  writableRepos: Repo[];
   reviewRequests: IssueLike[];
   myPullRequests: IssueLike[];
   assignedIssues: IssueLike[];

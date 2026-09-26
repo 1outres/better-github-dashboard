@@ -12,6 +12,7 @@
 import { createChromeStorage } from "@/shared/storage";
 import { createSettingsStore } from "@/shared/settings";
 import { createDashboardCache } from "@/shared/dashboard-cache";
+import { createWritableReposCache } from "@/shared/writable-repos-cache";
 import { createGitHubClient } from "@/shared/github";
 import type { RuntimeRequest, OpenOptionsResponse, RefreshResult } from "@/shared/messages";
 import { createDashboardRefresher } from "./refresher";
@@ -20,8 +21,12 @@ const OPTIONS_PATH = "src/options/index.html";
 
 const storage = createChromeStorage();
 const settings = createSettingsStore(storage);
-const cache = createDashboardCache(storage);
-const refresher = createDashboardRefresher({ settings, cache, github: createGitHubClient });
+const refresher = createDashboardRefresher({
+  settings,
+  dashboardCache: createDashboardCache(storage),
+  writableReposCache: createWritableReposCache(storage),
+  github: createGitHubClient,
+});
 
 const focusOrCreateOptionsTab = async (): Promise<void> => {
   const url = chrome.runtime.getURL(OPTIONS_PATH);

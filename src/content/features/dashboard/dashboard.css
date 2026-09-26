@@ -521,6 +521,52 @@ button {
   border: 1px solid var(--bgd-accent);
 }
 
+.bgd-alert {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--bgd-danger);
+  border-radius: 8px;
+  background: var(--bgd-bg);
+}
+
+.bgd-alert .body {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.bgd-alert strong {
+  color: var(--bgd-danger);
+}
+
+.bgd-alert .message {
+  overflow-wrap: anywhere;
+}
+
+.bgd-alert .meta {
+  color: var(--bgd-fg-muted);
+  font-size: 12px;
+}
+
+.bgd-alert-retry {
+  padding: 4px 12px;
+  border: 1px solid var(--bgd-border);
+  border-radius: 6px;
+  background: var(--bgd-bg-subtle);
+  color: var(--bgd-fg);
+  cursor: pointer;
+}
+
+.bgd-alert-retry:hover {
+  border-color: var(--bgd-accent);
+  color: var(--bgd-accent);
+}
+
 .bgd-skeleton {
   background: linear-gradient(
     90deg,

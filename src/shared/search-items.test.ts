@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DashboardData, IssueLike, Repo } from "./github";
 import type { ViewEntry } from "./view-stats";
+import type { CandidateSources } from "./repo-candidates";
 import { buildSearchItems, rankSearchItems, type SearchItem } from "./search-items";
 
 const mkRepo = (overrides: Partial<Repo> = {}): Repo => ({
@@ -29,13 +30,14 @@ const mkData = (overrides: Partial<DashboardData> = {}): DashboardData => ({
   viewer: { login: "me", name: null, avatarUrl: "" },
   pinnedRepos: [],
   recentRepos: [],
-  writableRepos: [],
   reviewRequests: [],
   myPullRequests: [],
   assignedIssues: [],
   mentions: [],
   ...overrides,
 });
+
+const NOW = 1_000_000;
 
 const mkViewEntry = (overrides: Partial<ViewEntry> = {}): ViewEntry => ({
   kind: "repo",
@@ -45,62 +47,92 @@ const mkViewEntry = (overrides: Partial<ViewEntry> = {}): ViewEntry => ({
   number: null,
   title: null,
   count: 1,
-  lastViewedAt: Date.now(),
+  lastViewedAt: NOW,
+  ...overrides,
+});
+
+const sources = (overrides: Partial<CandidateSources> = {}): CandidateSources => ({
+  dashboard: null,
+  writableRepos: [],
+  viewStats: [],
   ...overrides,
 });
 
 describe("buildSearchItems", () => {
-  it("returns empty array when no data and no view stats", () => {
-    expect(buildSearchItems(null, [])).toEqual([]);
+  it("returns empty array when there is no source data", () => {
+    expect(buildSearchItems(sources(), NOW)).toEqual([]);
   });
 
   it("dedups across pinned, recent, and writable repos", () => {
     const a = mkRepo({ nameWithOwner: "o/a", url: "https://github.com/o/a" });
     const b = mkRepo({ nameWithOwner: "o/b", url: "https://github.com/o/b" });
     const items = buildSearchItems(
-      mkData({ pinnedRepos: [a], recentRepos: [a, b], writableRepos: [b] }),
-      [],
+      sources({ dashboard: mkData({ pinnedRepos: [a], recentRepos: [a, b] }), writableRepos: [b] }),
+      NOW,
     );
-    expect(items.map((i) => i.url)).toEqual([
-      "https://github.com/o/a",
-      "https://github.com/o/b",
-    ]);
+    expect(items.map((i) => i.url)).toEqual(["https://github.com/o/a", "https://github.com/o/b"]);
+  });
+
+  it("uses the description, then the language, as the repo sub text", () => {
+    const items = buildSearchItems(
+      sources({
+        writableRepos: [
+          mkRepo({ nameWithOwner: "o/a", url: "https://github.com/o/a", description: "desc" }),
+          mkRepo({
+            nameWithOwner: "o/b",
+            url: "https://github.com/o/b",
+            primaryLanguage: { name: "Go", color: null },
+          }),
+        ],
+      }),
+      NOW,
+    );
+    expect(items.map((i) => i.sub)).toEqual(["desc", "Go"]);
   });
 
   it("includes issue/PR rows from all four lists", () => {
     const items = buildSearchItems(
-      mkData({
-        reviewRequests: [
-          mkIssue({ url: "https://github.com/o/r/pull/1", type: "PullRequest", title: "PR1" }),
-        ],
-        assignedIssues: [mkIssue({ url: "https://github.com/o/r/issues/2", number: 2 })],
+      sources({
+        dashboard: mkData({
+          reviewRequests: [
+            mkIssue({ url: "https://github.com/o/r/pull/1", type: "PullRequest", title: "PR1" }),
+          ],
+          assignedIssues: [mkIssue({ url: "https://github.com/o/r/issues/2", number: 2 })],
+        }),
       }),
-      [],
+      NOW,
     );
     expect(items.find((i) => i.url.endsWith("/pull/1"))?.kind).toBe("PullRequest");
     expect(items.find((i) => i.url.endsWith("/issues/2"))?.kind).toBe("Issue");
   });
 
-  it("appends view-stats entries that aren't already present", () => {
-    const known = mkRepo({ nameWithOwner: "o/known", url: "https://github.com/o/known" });
-    const stats = [
-      mkViewEntry({
-        key: "repo:o/known",
-        nameWithOwner: "o/known",
-        url: "https://github.com/o/known",
-        count: 5,
+  it("adds repos of the issue/PR lists and of view history as repo rows", () => {
+    const items = buildSearchItems(
+      sources({
+        dashboard: mkData({
+          myPullRequests: [
+            mkIssue({
+              type: "PullRequest",
+              url: "https://github.com/oss/contrib/pull/9",
+              repository: { nameWithOwner: "oss/contrib" },
+            }),
+          ],
+        }),
+        viewStats: [
+          mkViewEntry({
+            kind: "Issue",
+            key: "Issue:oss/visited#3",
+            url: "https://github.com/oss/visited/issues/3",
+            nameWithOwner: "oss/visited",
+            number: 3,
+          }),
+        ],
       }),
-      mkViewEntry({
-        key: "repo:o/extra",
-        nameWithOwner: "o/extra",
-        url: "https://github.com/o/extra",
-      }),
-    ];
-    const items = buildSearchItems(mkData({ pinnedRepos: [known] }), stats);
-    const urls = items.map((i) => i.url);
-    expect(urls).toContain("https://github.com/o/known");
-    expect(urls).toContain("https://github.com/o/extra");
-    expect(urls.filter((u) => u === "https://github.com/o/known")).toHaveLength(1);
+      NOW,
+    );
+    const repoUrls = items.filter((i) => i.kind === "repo").map((i) => i.url);
+    expect(repoUrls).toContain("https://github.com/oss/contrib");
+    expect(repoUrls).toContain("https://github.com/oss/visited");
   });
 
   it("works without dashboard data using only view stats", () => {
@@ -114,10 +146,8 @@ describe("buildSearchItems", () => {
         title: "From history",
       }),
     ];
-    const items = buildSearchItems(null, stats);
-    expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({
-      kind: "Issue",
+    const items = buildSearchItems(sources({ viewStats: stats }), NOW);
+    expect(items.find((i) => i.kind === "Issue")).toMatchObject({
       label: "From history",
       url: "https://github.com/o/r/issues/3",
     });
@@ -134,8 +164,43 @@ describe("buildSearchItems", () => {
         title: null,
       }),
     ];
-    const items = buildSearchItems(null, stats);
-    expect(items[0]?.label).toBe("o/r #9");
+    const items = buildSearchItems(sources({ viewStats: stats }), NOW);
+    expect(items.find((i) => i.kind === "PullRequest")?.label).toBe("o/r #9");
+  });
+
+  it("puts frequently viewed items first, counting issue and PR views toward their repo", () => {
+    const items = buildSearchItems(
+      sources({
+        dashboard: mkData({
+          pinnedRepos: [mkRepo({ nameWithOwner: "o/pinned", url: "https://github.com/o/pinned" })],
+          assignedIssues: [
+            mkIssue({
+              url: "https://github.com/o/pinned/issues/1",
+              repository: { nameWithOwner: "o/pinned" },
+            }),
+          ],
+        }),
+        writableRepos: [mkRepo({ nameWithOwner: "o/busy", url: "https://github.com/o/busy" })],
+        viewStats: [
+          mkViewEntry({
+            kind: "PullRequest",
+            key: "PullRequest:o/busy#5",
+            url: "https://github.com/o/busy/pull/5",
+            nameWithOwner: "o/busy",
+            number: 5,
+            title: "Busy PR",
+            count: 3,
+          }),
+        ],
+      }),
+      NOW,
+    );
+    expect(items.map((i) => i.url)).toEqual([
+      "https://github.com/o/busy",
+      "https://github.com/o/busy/pull/5",
+      "https://github.com/o/pinned",
+      "https://github.com/o/pinned/issues/1",
+    ]);
   });
 });
 

@@ -8,31 +8,22 @@ import {
   onMount,
   type Component,
 } from "solid-js";
-import type { DashboardData } from "@/shared/github";
-import { scoreEntry, type ViewEntry } from "@/shared/view-stats";
 import { buildSearchItems, rankSearchItems } from "@/shared/search-items";
 import type { AppContext } from "../../runtime/app-context";
 import { SearchIcon } from "../shared/icons";
+import { createLiveSources } from "../shared/live-sources";
 import { SearchResultRow } from "../shared/search-result";
 import { createArrowNavHandler } from "../shared/keyboard-nav";
 import { DASHBOARD_STALE_MS, requestRefreshDashboard } from "@/shared/messages";
 
-const sortViewStats = (stats: ViewEntry[]): ViewEntry[] => {
-  if (stats.length === 0) return stats;
-  const now = Date.now();
-  return [...stats].sort((a, b) => scoreEntry(b, now) - scoreEntry(a, now));
-};
-
 export const GlobalSearchOverlay: Component<{ app: AppContext }> = (props) => {
-  const { storage, dashboardCache: cache, viewStats: viewStatsStore } = props.app;
+  const live = createLiveSources(props.app);
   const [open, setOpen] = createSignal(false);
   const [query, setQuery] = createSignal("");
   const [active, setActive] = createSignal(0);
-  const [data, setData] = createSignal<DashboardData | null>(null);
-  const [viewStats, setViewStats] = createSignal<ViewEntry[]>([]);
   let inputRef: HTMLInputElement | undefined;
 
-  const allItems = createMemo(() => buildSearchItems(data(), sortViewStats(viewStats())));
+  const allItems = createMemo(() => buildSearchItems(live.sources(), Date.now()));
   const items = createMemo(() => rankSearchItems(allItems(), query()));
 
   // 候補が変わったらハイライト位置をリセット
@@ -40,12 +31,6 @@ export const GlobalSearchOverlay: Component<{ app: AppContext }> = (props) => {
     items();
     setActive(0);
   });
-
-  const refreshAll = async (): Promise<void> => {
-    const [c, v] = await Promise.all([cache.load(), viewStatsStore.load()]);
-    if (c) setData(c.data);
-    setViewStats(v);
-  };
 
   const navigate = (url: string): void => {
     setOpen(false);
@@ -72,7 +57,6 @@ export const GlobalSearchOverlay: Component<{ app: AppContext }> = (props) => {
       const willOpen = !open();
       setOpen(willOpen);
       if (willOpen) {
-        void refreshAll();
         // 検索を開いたタイミングで stale なら裏で最新化（dashboard を開かなくても候補が腐らない）
         void requestRefreshDashboard({ maxAgeMs: DASHBOARD_STALE_MS });
         focusInput();
@@ -100,18 +84,12 @@ export const GlobalSearchOverlay: Component<{ app: AppContext }> = (props) => {
   };
 
   onMount(() => {
-    void refreshAll();
-    const unsubCache = storage.subscribe("dashboard-cache", () => void refreshAll());
-    const unsubStats = storage.subscribe("view-stats", () => void refreshAll());
-
     // window-capture で登録：イベントは window → document → ... → target の順に
     // capture phase が走るので、document/window のどこに付いた GitHub 側のリスナよりも先に取れる。
     window.addEventListener("keydown", onKeyDown, true);
 
     onCleanup(() => {
       window.removeEventListener("keydown", onKeyDown, true);
-      unsubCache();
-      unsubStats();
     });
   });
 

@@ -1,6 +1,6 @@
 import { Fzf, extendedMatch, type FzfResultItem } from "fzf";
-import type { DashboardData } from "./github";
-import type { ViewEntry } from "./view-stats";
+import { collectRepoCandidates, type CandidateSources } from "./repo-candidates";
+import { repoKey, repoScores, scoreEntry } from "./view-stats";
 
 export type SearchItemKind = "repo" | "PullRequest" | "Issue";
 
@@ -18,61 +18,75 @@ export type RankedItem = {
 };
 
 /**
- * ダッシュボードのキャッシュと閲覧履歴を結合し、コマンドパレットの候補リストを構築する。
- * 重複は URL で吸収する。データが無くても view-stats だけで返せる（オーバーレイは
- * 非ダッシュボードページからキャッシュ未取得状態で開かれる可能性があるため）。
+ * Builds the candidate list of the search box from cached GitHub data and view history.
+ * Items are sorted by recent views, highest first. Items with the same score keep the order
+ * repos, issue/PR lists, then view history. Duplicates are merged by URL.
+ * Works with view history alone, because the overlay can open before the first fetch.
  */
-export const buildSearchItems = (
-  data: DashboardData | null | undefined,
-  viewStats: ViewEntry[],
-): SearchItem[] => {
+export const buildSearchItems = (sources: CandidateSources, now: number): SearchItem[] => {
+  const { dashboard, viewStats } = sources;
   const seen = new Set<string>();
-  const out: SearchItem[] = [];
+  const scored: { item: SearchItem; score: number }[] = [];
 
-  const push = (it: SearchItem) => {
-    if (seen.has(it.url)) return;
-    seen.add(it.url);
-    out.push(it);
+  const push = (item: SearchItem, score: number) => {
+    const key = item.url.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    scored.push({ item, score });
   };
 
-  if (data) {
-    for (const r of [...data.pinnedRepos, ...data.recentRepos, ...data.writableRepos]) {
-      push({
+  const scores = repoScores(viewStats, now);
+  for (const c of collectRepoCandidates(sources)) {
+    push(
+      {
         kind: "repo",
-        label: r.nameWithOwner,
-        sub: r.description ?? r.primaryLanguage?.name ?? "",
-        url: r.url,
-      });
-    }
+        label: c.nameWithOwner,
+        sub: c.details?.description ?? c.details?.primaryLanguage?.name ?? "",
+        url: c.url,
+      },
+      scores.get(repoKey(c.nameWithOwner)) ?? 0,
+    );
+  }
+
+  const viewScoreByUrl = new Map(viewStats.map((e) => [e.url.toLowerCase(), scoreEntry(e, now)]));
+  const viewScoreOf = (url: string) => viewScoreByUrl.get(url.toLowerCase()) ?? 0;
+
+  if (dashboard) {
     for (const i of [
-      ...data.reviewRequests,
-      ...data.myPullRequests,
-      ...data.assignedIssues,
-      ...data.mentions,
+      ...dashboard.reviewRequests,
+      ...dashboard.myPullRequests,
+      ...dashboard.assignedIssues,
+      ...dashboard.mentions,
     ]) {
-      push({
-        kind: i.type,
-        label: i.title,
-        sub: `${i.repository.nameWithOwner} #${i.number}`,
-        url: i.url,
-      });
+      push(
+        {
+          kind: i.type,
+          label: i.title,
+          sub: `${i.repository.nameWithOwner} #${i.number}`,
+          url: i.url,
+        },
+        viewScoreOf(i.url),
+      );
     }
   }
 
-  // 呼び出し側が事前にスコア降順ソートしている前提（dashboard / overlay の両方でそうしている）。
   for (const e of viewStats) {
-    if (e.kind === "repo") {
-      push({ kind: "repo", label: e.nameWithOwner, sub: "", url: e.url });
-    } else {
-      push({
+    if (e.kind === "repo") continue;
+    push(
+      {
         kind: e.kind,
         label: e.title ?? `${e.nameWithOwner} #${e.number}`,
         sub: `${e.nameWithOwner} #${e.number}`,
         url: e.url,
-      });
-    }
+      },
+      scoreEntry(e, now),
+    );
   }
-  return out;
+
+  return scored
+    .map((x, i) => ({ ...x, i }))
+    .sort((a, b) => b.score - a.score || a.i - b.i)
+    .map((x) => x.item);
 };
 
 // label と sub を 1 本に連結して fzf に渡す。SEP は extendedMatch のトークン区切り

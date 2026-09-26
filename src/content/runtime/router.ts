@@ -2,9 +2,16 @@ export type RouterCallback = (url: URL) => void;
 
 export type RouterDisposer = () => void;
 
+/** Document events that GitHub fires after a navigation that does not reload the page. */
+const NAVIGATION_EVENTS = [
+  "turbo:load",
+  // GitHub React pages (code view, issues, pull requests, ...) fire this instead of turbo:load.
+  "soft-nav:end",
+] as const;
+
 /**
- * GitHub のページ内遷移は `turbo:load` を発火する。SPA的な内部遷移を一律に
- * 1 つのコールバックに集約する薄いルータ。
+ * Calls the callback once for each new URL, for full page loads and for
+ * GitHub's in-page navigations alike.
  */
 export const startRouter = (callback: RouterCallback): RouterDisposer => {
   let lastHref = "";
@@ -15,16 +22,13 @@ export const startRouter = (callback: RouterCallback): RouterDisposer => {
     callback(new URL(location.href));
   };
 
-  const onTurboLoad = () => fire();
-  const onPopState = () => fire();
-
-  document.addEventListener("turbo:load", onTurboLoad);
-  window.addEventListener("popstate", onPopState);
+  for (const type of NAVIGATION_EVENTS) document.addEventListener(type, fire);
+  window.addEventListener("popstate", fire);
 
   fire();
 
   return () => {
-    document.removeEventListener("turbo:load", onTurboLoad);
-    window.removeEventListener("popstate", onPopState);
+    for (const type of NAVIGATION_EVENTS) document.removeEventListener(type, fire);
+    window.removeEventListener("popstate", fire);
   };
 };

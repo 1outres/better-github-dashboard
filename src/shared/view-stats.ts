@@ -37,6 +37,7 @@ export type ViewStatsStore = {
   load: () => Promise<ViewEntry[]>;
   record: (seed: ViewSeed) => Promise<void>;
   clear: () => Promise<void>;
+  subscribe: (listener: () => void) => () => void;
 };
 
 /** GitHub のサイト機能や予約パスなど、リポジトリ owner ではないトップレベル */
@@ -79,6 +80,12 @@ const RESERVED_OWNERS: ReadonlySet<string> = new Set([
   "billing",
   "apps",
   "integrations",
+  "orgs",
+  "users",
+  "enterprises",
+  "copilot",
+  "sessions",
+  "advisories",
 ]);
 
 const REPO_NAME_RE = /^[A-Za-z0-9._-]+$/;
@@ -124,6 +131,39 @@ export const scoreEntry = (entry: ViewEntry, now: number): number => {
   return entry.count * Math.pow(0.5, age / HALF_LIFE_MS);
 };
 
+/** GitHub treats owner/repo names case-insensitively, so compare them through this key. */
+export const repoKey = (nameWithOwner: string): string => nameWithOwner.toLowerCase();
+
+/** Sums the scores of every view in each repo, including its issue and pull request pages. */
+export const repoScores = (entries: ViewEntry[], now: number): Map<string, number> => {
+  const scores = new Map<string, number>();
+  for (const e of entries) {
+    const key = repoKey(e.nameWithOwner);
+    scores.set(key, (scores.get(key) ?? 0) + scoreEntry(e, now));
+  }
+  return scores;
+};
+
+const TITLE_PATTERNS: Readonly<Record<Exclude<ViewKind, "repo">, RegExp>> = {
+  Issue: /^(?<title>.+) · Issue #(?<number>\d+) · (?<repo>[^\s·]+)(?: · GitHub)?$/,
+  PullRequest:
+    /^(?<title>.+) by \S+ · Pull Request #(?<number>\d+) · (?<repo>[^\s·]+)(?: · GitHub)?$/,
+};
+
+/**
+ * Takes the issue or pull request title out of document.title.
+ * Returns null when document.title belongs to another page. On popstate, GitHub updates
+ * the URL before the title, so the title can still be the one of the previous page.
+ */
+export const extractViewTitle = (rawTitle: string, seed: ViewSeed): string | null => {
+  if (seed.kind === "repo") return null;
+  const groups = TITLE_PATTERNS[seed.kind].exec(rawTitle.trim())?.groups;
+  if (!groups?.["title"] || !groups["number"] || !groups["repo"]) return null;
+  if (Number(groups["number"]) !== seed.number) return null;
+  if (repoKey(groups["repo"]) !== repoKey(seed.nameWithOwner)) return null;
+  return groups["title"];
+};
+
 export const createViewStatsStore = (storage: StorageBackend): ViewStatsStore => {
   const read = async (): Promise<StoredShape> => {
     const raw = await storage.get<StoredShape>(KEY);
@@ -165,5 +205,6 @@ export const createViewStatsStore = (storage: StorageBackend): ViewStatsStore =>
       await storage.set(KEY, shape);
     },
     clear: () => storage.remove(KEY),
+    subscribe: (listener) => storage.subscribe(KEY, () => listener()),
   };
 };

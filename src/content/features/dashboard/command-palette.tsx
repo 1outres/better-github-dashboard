@@ -8,22 +8,14 @@ import {
   onMount,
   type Component,
 } from "solid-js";
-import type { DashboardData } from "@/shared/github";
-import { scoreEntry, type ViewEntry } from "@/shared/view-stats";
+import type { CandidateSources } from "@/shared/repo-candidates";
 import { buildSearchItems, rankSearchItems } from "@/shared/search-items";
 import { SearchIcon } from "../shared/icons";
 import { SearchResultRow } from "../shared/search-result";
 import { createArrowNavHandler } from "../shared/keyboard-nav";
 
-const sortViewStats = (stats: ViewEntry[]): ViewEntry[] => {
-  if (stats.length === 0) return stats;
-  const now = Date.now();
-  return [...stats].sort((a, b) => scoreEntry(b, now) - scoreEntry(a, now));
-};
-
 export const CommandPalette: Component<{
-  data: DashboardData | null | undefined;
-  viewStats: ViewEntry[];
+  sources: CandidateSources;
   shadowRoot: ShadowRoot;
 }> = (props) => {
   const [query, setQuery] = createSignal("");
@@ -31,7 +23,7 @@ export const CommandPalette: Component<{
   const [active, setActive] = createSignal(0);
   let inputRef!: HTMLInputElement;
 
-  const allItems = createMemo(() => buildSearchItems(props.data, sortViewStats(props.viewStats)));
+  const allItems = createMemo(() => buildSearchItems(props.sources, Date.now()));
   const items = createMemo(() => rankSearchItems(allItems(), query()));
 
   createEffect(() => {
