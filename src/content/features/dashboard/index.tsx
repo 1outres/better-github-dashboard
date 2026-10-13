@@ -26,6 +26,18 @@ const PAGE_OVERRIDE_CSS = `
     max-width: none !important;
     width: 100% !important;
   }
+  /* GitHub hides main and shows a spinner until a partial inside #dashboard gets .loaded.
+     We replace #dashboard, so that never happens. Show main ourselves. */
+  .feed-main__universe:has(> main #${HOST_ID}) {
+    display: flex !important;
+    align-items: stretch !important;
+    justify-content: flex-start !important;
+    border: 0 !important;
+  }
+  .feed-main__universe:has(> main #${HOST_ID}) > main { display: block !important; }
+  .feed-main__universe:has(> main #${HOST_ID}) > .feed-main__universe--spinner {
+    display: none !important;
+  }
 `;
 
 let dispose: (() => void) | null = null;
